@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowRight, 
@@ -489,7 +489,7 @@ export default function Wizard() {
           extension: selectedPlanConfig.extension,
           arancelOficial: selectedPlanConfig.priceNumber,
           arancelFormateado: selectedPlanConfig.priceFormatted,
-          requierePagoMercadoPago: selectedPlanConfig.isPaid,
+          requierePagoMercadoPago: Boolean(selectedPlanConfig.isPaid),
           estadoPagoDominio: selectedPlanConfig.isPaid ? 'PENDIENTE_PAGO_MERCADOPAGO' : 'INCLUIDO_GRATIS',
           linkMercadoPago: selectedPlanConfig.mercadoPagoLink || null,
           dominioPrioridad1: data.domainOption1,
@@ -518,7 +518,25 @@ export default function Wizard() {
         }
       };
 
-      await setDoc(doc(db, FIRESTORE_COLLECTION, documentId), cleanData);
+            // Función de seguridad: Firestore arroja error fatal si encuentra cualquier valor undefined
+      const sanitizeForFirestore = (obj: any): any => {
+        if (obj === null || obj === undefined) return null;
+        if (typeof obj !== 'object') return obj;
+        if (obj instanceof Date) return obj;
+        if (obj && typeof obj === 'object' && ('_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
+          return obj;
+        }
+        if (Array.isArray(obj)) {
+          return obj.map(item => sanitizeForFirestore(item));
+        }
+        const clean: Record<string, any> = {};
+        for (const [key, val] of Object.entries(obj)) {
+          clean[key] = val === undefined ? null : sanitizeForFirestore(val);
+        }
+        return clean;
+      };
+
+      await setDoc(doc(db, FIRESTORE_COLLECTION, documentId), sanitizeForFirestore(cleanData));
 
       if (selectedPlanConfig.isPaid && selectedPlanConfig.mercadoPagoLink) {
         const mpBase = selectedPlanConfig.mercadoPagoLink;

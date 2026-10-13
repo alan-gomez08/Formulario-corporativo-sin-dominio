@@ -1,4 +1,4 @@
-export type DomainPlanType = 'free' | 'com_ar' | 'com';
+﻿export type DomainPlanType = 'free' | 'com_ar' | 'com';
 
 export interface DomainPlanFeature {
   label: string;
@@ -14,6 +14,7 @@ export interface DomainPlanConfig {
   exampleUrl: string;
   priceFormatted: string;
   priceNumber: number;
+  isPaid: boolean;
   periodText: string;
   renewalNotice: string;
   tagline: string;
@@ -32,6 +33,7 @@ export const DOMAIN_PLANS: Record<DomainPlanType, DomainPlanConfig> = {
     exampleUrl: 'tuempresa.vercel.app',
     priceFormatted: '$0',
     priceNumber: 0,
+    isPaid: false,
     periodText: 'Gratis de por vida',
     renewalNotice: 'Sin costos de renovación ni mantenimiento',
     tagline: 'Dirección web básica incluida sobre la infraestructura global de Vercel.',
@@ -64,6 +66,7 @@ export const DOMAIN_PLANS: Record<DomainPlanType, DomainPlanConfig> = {
     exampleUrl: 'tuempresa.com.ar',
     priceFormatted: '$20.000',
     priceNumber: 20000,
+    isPaid: true,
     periodText: 'ARS / año',
     renewalNotice: 'Arancel oficial de registro anual NIC Argentina',
     tagline: 'Identidad corporativa nacional para consolidar la confianza de tus clientes en el país.',
@@ -107,6 +110,7 @@ export const DOMAIN_PLANS: Record<DomainPlanType, DomainPlanConfig> = {
     exampleUrl: 'tuempresa.com',
     priceFormatted: '$30.000',
     priceNumber: 30000,
+    isPaid: true,
     periodText: 'ARS / año',
     renewalNotice: 'Arancel oficial de registro anual ICANN / Registrar',
     tagline: 'El estándar comercial internacional más prestigioso y recordado del planeta.',
