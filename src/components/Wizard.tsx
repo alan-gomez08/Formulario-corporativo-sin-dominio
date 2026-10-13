@@ -1,252 +1,379 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, ArrowLeft, PartyPopper, Sparkles, Image as ImageIcon, MapPin, Phone, AtSign, Monitor, Smartphone, Plus, Trash2, Star, Type, BarChart3, CalendarHeart, Award, HeartHandshake, CreditCard, Link as LinkIcon, Info, Loader2, ShieldCheck, ExternalLink, ShoppingCart, UploadCloud, CheckCircle2, Zap, TrendingUp, X, HelpCircle, Briefcase, Globe } from 'lucide-react';
-import type { OnboardingData } from '../types';
-import ImageUpload from './ImageUpload';
-import AddressAutocomplete from './AddressAutocomplete'; 
+import { 
+  ArrowRight, 
+  ArrowLeft, 
+  Sparkles, 
+  Phone, 
+  Mail, 
+  Plus, 
+  Trash2, 
+  Star, 
+  CreditCard, 
+  Link as LinkIcon, 
+  Loader2, 
+  ShieldCheck, 
+  CheckCircle2, 
+  Globe, 
+  Quote,
+  Check,
+  Palette,
+  Type,
+  SunMedium,
+  ArrowDown,
+  MapPin
+} from 'lucide-react';
 
-import { db } from '../firebase';
+import type { CorporateFormData, ServiceItem, FaqItem, StepDefinition, DomainPlanType } from '../types/wizard';
+import ImageUpload from './ImageUpload';
+import AddressAutocomplete from './AddressAutocomplete';
+import StepWelcome, { DEFAULT_CORPORATE_DEMO_URL } from './steps/StepWelcome';
+import StepDomainPlan from './steps/StepDomainPlan';
+import StepDomainPreferences from './steps/StepDomainPreferences';
+import { DOMAIN_PLANS } from '../config/domainPlans';
+import MercadoPagoIcon from './icons/MercadoPagoIcon';
+import { parseColorToCss } from '../utils/colorParser';
+
+import { db, FIRESTORE_COLLECTION } from '../firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-type ProductItem = { id: string; name: string; description: string; price: string; image: string };
-type Category = { name: string; items: ProductItem[] };
-type ServiceItem = { id: string; title: string; description: string; iconHint: string };
+const CLOUDINARY_BASE_FOLDER = import.meta.env.VITE_CLOUDINARY_BASE_FOLDER || 'Template Corporativo - Sin dominio';
 
-interface ExtendedData extends Omit<OnboardingData, 'categories'> {
-  wantsMobileHero: boolean; heroImageMobile: string;
-  noLogo: boolean;
-  primaryColor: string; secondaryColor: string; typography: string; customTypography: string;
-  aboutImage: string; aboutText: string;
-  stats: { label: string; value: string }[];
-  offersEvents: boolean | null; eventTitle: string; eventDescription: string;
-  t2Strengths: string[]; t2StoryText: string; t2StoryImage: string; t2MaterialsText: string; t2MaterialsImages: string[];
-  services: ServiceItem[];
-  categories: Category[]; featuredIds: string[];
-  useGoogleMapsReviews: boolean; googleMapsLink: string; reviewsList: { name: string; text: string }[];
-  domainOptionsList: string[];
-  
-  t1MenuMode: 'abierto' | 'ecommerce' | '';
-  t1BulkUploadMode: boolean;
-  t1BulkFileUrl: string;
-  t1BulkFeatured: string[]; 
-  t1DeliveryMethod: 'takeaway' | 'delivery' | 'ambos' | ''; 
-  t1DeliveryZones: string; 
-  t2Dynamic: 'productos' | 'servicios' | '';
-  t2ProductMode: 'consulta' | 'vitrina' | '';
-  t2AgendaMode: 'whatsapp' | 'link' | '';
-  t2AgendaLink: string;
-  t2ServicePricing: 'sin_precios' | 'con_precios' | '';
-  t3Faqs: { question: string; answer: string }[];
-  acceptedTerms: boolean;
-}
+const WhatsAppIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.456 5.711 1.456h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+  </svg>
+);
 
-const generateEmptyItems = (): ProductItem[] => Array.from({ length: 6 }, () => ({ id: Math.random().toString(36).substring(7), name: '', description: '', price: '', image: '' }));
-const generateEmptyServices = (): ServiceItem[] => Array.from({ length: 6 }, () => ({ id: Math.random().toString(36).substring(7), title: '', description: '', iconHint: '' }));
+const InstagramIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+  </svg>
+);
 
-const initialData: ExtendedData = {
-  mercadoLibreUser: '', templateSelected: '', logoUrl: '', noLogo: false,
-  primaryColor: '', secondaryColor: '', typography: '', customTypography: '', backgroundTone: '', 
-  heroTitle: '', extraInfo: '', heroImage: '', wantsMobileHero: false, heroImageMobile: '', 
-  aboutImage: '', aboutText: '', stats: [{label:'', value:''}, {label:'', value:''}, {label:'', value:''}, {label:'', value:''}], 
-  offersEvents: null, eventTitle: '', eventDescription: '',
-  t2Strengths: ['', '', ''], t2StoryText: '', t2StoryImage: '', t2MaterialsText: '', t2MaterialsImages: ['', '', '', '', '', ''],
-  services: generateEmptyServices(), 
-  categories: [{ name: '', items: generateEmptyItems() }, { name: '', items: generateEmptyItems() }, { name: '', items: generateEmptyItems() }], 
-  featuredIds: [], strengths: '', reviews: '', useGoogleMapsReviews: false, googleMapsLink: '', reviewsList: [{name:'', text:''}, {name:'', text:''}, {name:'', text:''}], reviewImages: [], socialLinks: '', whatsapp: '', address: '', domainType: '', domainOptionsList: ['', '', ''],
-  t1MenuMode: '', t1BulkUploadMode: false, t1BulkFileUrl: '', t1BulkFeatured: ['', '', '', '', '', ''],
-  t1DeliveryMethod: '', t1DeliveryZones: '',
-  t2Dynamic: '', t2ProductMode: '', t2AgendaMode: '', t2AgendaLink: '', t2ServicePricing: '',
-  t3Faqs: [{ question: '', answer: '' }, { question: '', answer: '' }, { question: '', answer: '' }],
+const FacebookIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+  </svg>
+);
+
+const LinkedinIcon = ({ size = 18, className = "" }: { size?: number; className?: string }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+    <rect width="4" height="12" x="2" y="9" />
+    <circle cx="4" cy="4" r="2" />
+  </svg>
+);
+
+// Componente de apoyo visible, elegante y con personalidad de agencia
+const AgencyCopyTip = ({
+  message
+}: {
+  message: string;
+}) => (
+  <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 flex items-start gap-2.5 text-xs sm:text-[13px] text-slate-700 leading-relaxed shadow-2xs">
+    <Sparkles size={15} className="text-blue-600 shrink-0 mt-0.5" />
+    <div>
+      <span className="font-bold text-slate-900 mr-1.5">Tip de redacción:</span>
+      <span className="text-slate-700">{message}</span>
+    </div>
+  </div>
+);
+
+const generateEmptyServices = (): ServiceItem[] => [
+  { id: 'svc-1', title: '', description: '', iconHint: '' },
+  { id: 'svc-2', title: '', description: '', iconHint: '' },
+  { id: 'svc-3', title: '', description: '', iconHint: '' },
+  { id: 'svc-4', title: '', description: '', iconHint: '' },
+  { id: 'svc-5', title: '', description: '', iconHint: '' },
+  { id: 'svc-6', title: '', description: '', iconHint: '' }
+];
+
+const initialData: CorporateFormData = {
+  mercadoLibreUser: '',
+  templateSelected: 'T3',
+
+  // 1. Identidad Corporativa
+  companyName: '',
+  slogan: '',
+  logoUrl: '',
+  noLogo: false,
+  primaryColor: '',
+  secondaryColor: '',
+  typography: '',
+  customTypography: '',
+  backgroundTone: '',
+  heroTitle: '',
+  heroImage: '',
+  wantsMobileHero: false,
+  heroImageMobile: '',
+
+  // 2. Sobre la Empresa
+  aboutText: '',
+  aboutImage: '',
+  strengths: '',
+  stats: [],
+
+  // 3. Servicios & FAQs
+  services: generateEmptyServices(),
+  faqs: [
+    { question: '', answer: '' },
+    { question: '', answer: '' }
+  ],
+
+  // 4. Testimonios
+  useGoogleMapsReviews: false,
+  googleMapsLink: '',
+  reviewsList: [
+    { name: '', company: '', text: '' },
+    { name: '', company: '', text: '' },
+    { name: '', company: '', text: '' }
+  ],
+
+  // 5. Contacto
+  whatsapp: '',
+  corporateEmail: '',
+  linkedin: '',
+  instagram: '',
+  facebook: '',
+  address: '',
+
+  // 6. Dominio y Dirección Web (Plan y 3 opciones)
+  domainPlan: 'com_ar',
+  domainOption1: '',
+  domainOption2: '',
+  domainOption3: '',
+
+  // 7. Términos
   acceptedTerms: false
 };
 
-const TEMPLATES = [
-  { id: 'T1', name: 'Template 1 (Gastronomía)', img: '/assets/Template1.webp', link: 'https://landing-base-core-template1.vercel.app/' }, 
-  { id: 'T2', name: 'Template 2 (Showroom/Turnos)', img: '/assets/Template2.webp', link: 'https://landing-base-core-template2.vercel.app/' },
-  { id: 'T3', name: 'Template 3 (Corporativo)', img: '/assets/Template3.webp', link: 'https://landing-base-core-template3.vercel.app/' }, 
-  { id: 'T4', name: 'Template 4 (Servicios Home)', img: '/assets/Template4.webp', link: 'https://landing-base-core-template4.vercel.app/' },
+const STEPS: StepDefinition[] = [
+  { id: 'WELCOME', title: 'Bienvenida & Demo', category: 'Inicio' },
+  { id: 'ACCOUNT_SYNC', title: 'Identificador de Compra', category: 'Identidad' },
+  { id: 'COMPANY_NAME', title: 'Nombre & Eslogan', category: 'Identidad' },
+  { id: 'BRAND_LOGO', title: 'Logotipo Oficial', category: 'Identidad' },
+  { id: 'BRAND_STYLE', title: 'Estilo Visual', category: 'Identidad' },
+  { id: 'HERO_SECTION', title: 'Portada Principal', category: 'Identidad' },
+  { id: 'ABOUT_COMPANY', title: 'Quiénes Somos', category: 'Empresa' },
+  { id: 'VALUE_PROPOSITION', title: 'Por Qué Elegirnos', category: 'Empresa' },
+  { id: 'SERVICES_PORTFOLIO', title: 'Cartera de Servicios', category: 'Soluciones' },
+  { id: 'FAQS_SECTION', title: 'Preguntas Frecuentes', category: 'Soluciones' },
+  { id: 'CLIENTS_TESTIMONIALS', title: 'Testimonios & Clientes', category: 'Testimonios' },
+  { id: 'CONTACT_CHANNELS', title: 'Canales de Contacto', category: 'Contacto' },
+  { id: 'DOMAIN_PLAN', title: 'Tipo de Dominio', category: 'Dominio' },
+  { id: 'DOMAIN_PREFERENCES', title: 'Opciones de Dominio', category: 'Dominio' },
+  { id: 'FINAL_REVIEW', title: 'Confirmación & Envío', category: 'Finalizar' }
 ];
 
 export default function Wizard() {
-  const [data, setData] = useState<ExtendedData>(initialData);
+  const [data, setData] = useState<CorporateFormData>(initialData);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCartOpen, setIsCartOpen] = useState(false); 
+  const [submittedProject, setSubmittedProject] = useState<{
+    id: string;
+    companyName: string;
+    isPaid?: boolean;
+    planName?: string;
+    priceFormatted?: string;
+    redirectUrl?: string;
+  } | null>(null);
+
+  // Helper para generar el nombre de carpeta del cliente en Cloudinary
+  const getClientFolderName = () => {
+    const company = (data.companyName ?? '').trim();
+    const user = (data.mercadoLibreUser ?? '').trim();
+    if (company && user) return `${company}_(${user})`;
+    if (company) return company;
+    if (user) return user;
+    return 'cliente_general';
+  };
+
+  // Sub-paso para que la pantalla interactiva se quede fija arriba y abajo cambien: 0 = Colores, 1 = Tipografía, 2 = Tono
+  const [brandSubStep, setBrandSubStep] = useState<0 | 1 | 2>(0);
+
+  // Estado para el indicador animado flotante "Continúa abajo"
+  const [showScrollPrompt, setShowScrollPrompt] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentStepIndex]);
+  }, [currentStepIndex, brandSubStep]);
 
-  const steps = useMemo(() => {
-    const s = [{ id: 'WELCOME' }, { id: 'ML_USER' }, { id: 'TEMPLATE' }, { id: 'LOGO' }, { id: 'COLORS' }, { id: 'TYPOGRAPHY' }, { id: 'BACKGROUND' }, { id: 'HERO_TITLE' }, { id: 'HERO_DESKTOP' }];
-    if (data.wantsMobileHero) s.push({ id: 'HERO_MOBILE' });
+  useEffect(() => {
+    const checkScroll = () => {
+      const scrollHeight = document.documentElement.scrollHeight;
+      const clientHeight = window.innerHeight;
+      const scrollY = window.scrollY;
+      const scrollRemaining = scrollHeight - (scrollY + clientHeight);
 
-    if (data.templateSelected === 'T1') {
-      s.push({ id: 'T1_ABOUT' }, { id: 'T1_UPSELL' }, { id: 'CATEGORIES_DEF' });
-      if (!data.t1BulkUploadMode) {
-        data.categories.forEach((cat, idx) => { if (cat.name.trim() !== '') s.push({ id: `CAT_UPLOAD_${idx}`, catIndex: idx }); });
-        s.push({ id: 'FEATURED' });
-      } else {
-        s.push({ id: 'T1_BULK_UPLOAD' }, { id: 'T1_BULK_FEATURED' }); 
-      }
-      s.push({ id: 'T1_LOGISTICS' }); 
-      s.push({ id: 'T1_STATS' }, { id: 'T1_EVENTS' });
-    } 
-    else if (data.templateSelected === 'T2') {
-      s.push({ id: 'T2_DYNAMIC' });
-      if (data.t2Dynamic === 'productos') {
-        s.push({ id: 'T2_UPSELL_PROD' }, { id: 'T2_STORY' }, { id: 'T2_MATERIALS' }, { id: 'T2_STRENGTHS' }, { id: 'CATEGORIES_DEF' });
-        data.categories.forEach((cat, idx) => { if (cat.name.trim() !== '') s.push({ id: `CAT_UPLOAD_${idx}`, catIndex: idx }); });
-        s.push({ id: 'FEATURED' }); 
-      } else if (data.t2Dynamic === 'servicios') {
-        s.push(
-          { id: 'T2_AGENDA' }, 
-          { id: 'T2_UPSELL_SERV' }, 
-          { id: 'T2_STORY' }, 
-          { id: 'T2_STRENGTHS' }, 
-          { id: 'T2_MATERIALS' }, 
-          { id: 'CATEGORIES_DEF' }
-        );
-        data.categories.forEach((cat, idx) => { if (cat.name.trim() !== '') s.push({ id: `CAT_UPLOAD_${idx}`, catIndex: idx }); });
-        s.push({ id: 'FEATURED' }); 
-      }
-    } 
-    else if (data.templateSelected === 'T3' || data.templateSelected === 'T4') {
-      s.push({ id: 'T1_ABOUT' }, { id: 'SERVICES_DEF' }, { id: 'STRENGTHS' });
-      if (data.templateSelected === 'T3') {
-        s.push({ id: 'T3_FAQS' });
+      // Solo mostrar si realmente hay más de 240px de contenido oculto debajo y estamos en la parte superior
+      const hasSignificantContentBelow = scrollRemaining > 240;
+      const isNearTop = scrollY < 50;
+
+      setShowScrollPrompt(hasSignificantContentBelow && isNearTop);
+    };
+
+    const timer = setTimeout(checkScroll, 200);
+    window.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [currentStepIndex, brandSubStep, data.services.length]);
+
+  const currentStep = STEPS[currentStepIndex];
+
+  const nextStep = () => {
+    // Si estamos en la pantalla interactiva de estilo de marca, avanzamos primero sus sub-pasos
+    if (currentStep.id === 'BRAND_STYLE' && brandSubStep < 2) {
+      setBrandSubStep((prev) => (prev + 1) as 0 | 1 | 2);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (currentStepIndex < STEPS.length - 1) {
+      setDirection(1);
+      setCurrentStepIndex((prev) => prev + 1);
+      // Al entrar a BRAND_STYLE desde BRAND_LOGO, comenzamos en subpaso 0 (Colores)
+      if (STEPS[currentStepIndex + 1]?.id === 'BRAND_STYLE') {
+        setBrandSubStep(0);
       }
     }
-    
-    if (data.templateSelected !== 'T3') {
-      s.push({ id: 'REVIEWS_NEW' });
-    }
-    s.push({ id: 'CONTACT_NEW' }, { id: 'DOMAIN_TYPE' });
-    if (data.domainType !== '' && data.domainType !== 'GRATIS') s.push({ id: 'DOMAIN_OPTIONS' });
-    s.push({ id: 'TERMS' }, { id: 'END' });
-    return s;
-  }, [data]);
-
-  const currentStep = steps[currentStepIndex];
-  const nextStep = () => setCurrentStepIndex((prev) => Math.min(steps.length - 1, prev + 1));
-  const prevStep = () => setCurrentStepIndex((prev) => Math.max(0, prev - 1));
-
-  const handleInputChange = (field: keyof ExtendedData, value: any) => setData((prev) => ({ ...prev, [field]: value }));
-
-  const updateCategoryName = (index: number, name: string) => { const newCats = [...data.categories]; newCats[index].name = name; setData(prev => ({ ...prev, categories: newCats })); };
-  const addCategory = () => { if (data.categories.length < 5) setData(prev => ({ ...prev, categories: [...prev.categories, { name: '', items: generateEmptyItems() }] })); };
-  const removeCategory = (index: number) => setData(prev => ({ ...prev, categories: prev.categories.filter((_, i) => i !== index) }));
-  const updateProduct = (catIdx: number, itemIdx: number, field: keyof ProductItem, value: string) => { const newCats = [...data.categories]; newCats[catIdx].items[itemIdx] = { ...newCats[catIdx].items[itemIdx], [field]: value }; setData(prev => ({ ...prev, categories: newCats })); };
-  const toggleFeatured = (id: string) => setData(prev => ({ ...prev, featuredIds: prev.featuredIds.includes(id) ? prev.featuredIds.filter(fId => fId !== id) : prev.featuredIds.length >= 6 ? prev.featuredIds : [...prev.featuredIds, id] }));
-  const updateService = (index: number, field: keyof ServiceItem, value: string) => { const newS = [...data.services]; newS[index] = { ...newS[index], [field]: value }; setData(prev => ({ ...prev, services: newS })); };
-  const updateStat = (index: number, field: 'label'|'value', val: string) => { const n = [...data.stats]; n[index][field] = val; setData(prev => ({ ...prev, stats: n })); };
-  const updateT2Strength = (index: number, val: string) => { const n = [...data.t2Strengths]; n[index] = val; setData(prev => ({ ...prev, t2Strengths: n })); };
-  const updateReview = (index: number, field: 'name'|'text', val: string) => { const n = [...data.reviewsList]; n[index][field] = val; setData(prev => ({ ...prev, reviewsList: n })); };
-  const updateDomainOption = (index: number, val: string) => { const n = [...data.domainOptionsList]; n[index] = val; setData(prev => ({ ...prev, domainOptionsList: n })); };
-  const updateT2MaterialImage = (index: number, val: string) => { const n = [...data.t2MaterialsImages]; n[index] = val; setData(prev => ({ ...prev, t2MaterialsImages: n })); };
-  const updateBulkFeatured = (index: number, val: string) => { const n = [...data.t1BulkFeatured]; n[index] = val; setData(prev => ({ ...prev, t1BulkFeatured: n })); };
-
-  const updateFaq = (index: number, field: 'question' | 'answer', value: string) => {
-    const n = [...data.t3Faqs];
-    n[index][field] = value;
-    setData(prev => ({ ...prev, t3Faqs: n }));
   };
+
+  const prevStep = () => {
+    // Si estamos en la pantalla interactiva y en subpaso mayor a 0, retrocedemos de subpaso
+    if (currentStep.id === 'BRAND_STYLE' && brandSubStep > 0) {
+      setBrandSubStep((prev) => (prev - 1) as 0 | 1 | 2);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (currentStepIndex > 0) {
+      setDirection(-1);
+      setCurrentStepIndex((prev) => prev - 1);
+      // Si volvemos hacia BRAND_STYLE desde HERO_SECTION, mostramos el último subpaso (Tonos)
+      if (STEPS[currentStepIndex - 1]?.id === 'BRAND_STYLE') {
+        setBrandSubStep(2);
+      }
+    }
+  };
+
+  const handleInputChange = <K extends keyof CorporateFormData>(field: K, value: CorporateFormData[K]) => {
+    setData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateService = (index: number, field: keyof ServiceItem, value: string) => {
+    const updated = [...data.services];
+    updated[index] = { ...updated[index], [field]: value };
+    setData((prev) => ({ ...prev, services: updated }));
+  };
+
+  const updateFaq = (index: number, field: keyof FaqItem, value: string) => {
+    const updated = [...data.faqs];
+    updated[index] = { ...updated[index], [field]: value };
+    setData((prev) => ({ ...prev, faqs: updated }));
+  };
+
   const addFaq = () => {
-    if (data.t3Faqs.length < 5) setData(prev => ({ ...prev, t3Faqs: [...prev.t3Faqs, { question: '', answer: '' }] }));
+    if (data.faqs.length < 5) {
+      setData((prev) => ({
+        ...prev,
+        faqs: [...prev.faqs, { question: '', answer: '' }]
+      }));
+    }
   };
+
   const removeFaq = (index: number) => {
-    setData(prev => ({ ...prev, t3Faqs: prev.t3Faqs.filter((_, i) => i !== index) }));
-  };
-
-  const calculateTotal = () => {
-    let total = 0;
-    if (data.domainType === 'COM') total += 30000;
-    if (data.domainType === 'COMAR') total += 15000;
-    return total;
-  };
-
-  const clearCartSelections = () => {
-    setData(prev => ({
+    setData((prev) => ({
       ...prev,
-      domainType: prev.domainType !== '' ? 'GRATIS' : prev.domainType,
-      t1MenuMode: prev.t1MenuMode !== '' ? 'abierto' : prev.t1MenuMode,
-      t2ServicePricing: prev.t2ServicePricing !== '' ? 'sin_precios' : prev.t2ServicePricing,
-      t2ProductMode: prev.t2ProductMode !== '' ? 'consulta' : prev.t2ProductMode
+      faqs: prev.faqs.filter((_, i) => i !== index)
     }));
   };
 
-  const isNextDisabled = () => {
-    const step = currentStep.id;
+  const updateReview = (index: number, field: 'name' | 'company' | 'text', value: string) => {
+    const updated = [...data.reviewsList];
+    updated[index] = { ...updated[index], [field]: value };
+    setData((prev) => ({ ...prev, reviewsList: updated }));
+  };
 
-    if (step === 'ML_USER') return data.mercadoLibreUser.trim() === '';
-    if (step === 'TEMPLATE') return data.templateSelected === '';
-    if (step === 'LOGO') return !data.noLogo && data.logoUrl === '';
-    if (step === 'COLORS') return data.primaryColor.trim() === '' || data.secondaryColor.trim() === '';
-    if (step === 'TYPOGRAPHY') return data.typography === '' || (data.typography === 'Otra' && data.customTypography.trim() === '');
-    if (step === 'BACKGROUND') return data.backgroundTone === '';
-    if (step === 'HERO_TITLE') return data.heroTitle.trim() === '';
-    if (step === 'HERO_DESKTOP') return data.heroImage === '';
-    if (step === 'HERO_MOBILE') return data.heroImageMobile === '';
+  const isNextDisabled = (): boolean => {
+    const stepId = currentStep.id;
 
-    if (step === 'T1_ABOUT') return data.aboutText.trim() === '';
-    if (step === 'T1_UPSELL') return data.t1MenuMode === '';
-    if (step === 'T1_BULK_UPLOAD') return data.t1BulkFileUrl.trim() === '';
-    if (step === 'T1_BULK_FEATURED') return data.t1BulkFeatured.some(n => n.trim() === '');
-    if (step === 'T1_LOGISTICS') {
-      if (data.t1DeliveryMethod === '') return true;
-      if ((data.t1DeliveryMethod === 'delivery' || data.t1DeliveryMethod === 'ambos') && data.t1DeliveryZones.trim() === '') return true;
-      return false;
-    }
-    if (step === 'T1_STATS') return data.stats.some(s => s.label.trim() === '' || s.value.trim() === '');
-    if (step === 'T1_EVENTS') {
-      if (data.offersEvents === null) return true;
-      if (data.offersEvents === true) return data.eventTitle.trim() === '' || data.eventDescription.trim() === '';
-      return false;
-    }
-
-    if (step === 'T2_DYNAMIC') return data.t2Dynamic === '';
-    if (step === 'T2_UPSELL_PROD') return data.t2ProductMode === '';
-    if (step === 'T2_AGENDA') return data.t2AgendaMode === '' || (data.t2AgendaMode === 'link' && data.t2AgendaLink.trim() === '');
-    if (step === 'T2_UPSELL_SERV') return data.t2ServicePricing === '';
-    if (step === 'T2_STORY') return data.t2StoryText.trim() === '' || data.t2StoryImage === '';
-    if (step === 'T2_MATERIALS') return data.t2MaterialsText.trim() === '' || !data.t2MaterialsImages.some(img => img !== '');
-    if (step === 'T2_STRENGTHS') return data.t2Strengths.some(s => s.trim() === '');
-
-    if (step === 'CATEGORIES_DEF') {
-      const validCats = data.categories.filter(c => c.name.trim() !== '');
-      return validCats.length < 3 || validCats.length > 5;
-    }
-    if (step?.startsWith('CAT_UPLOAD_')) {
-      const catIndex = currentStep.catIndex!;
-      const items = data.categories[catIndex].items;
-      if (data.t1MenuMode === 'ecommerce' || data.t2ProductMode === 'vitrina' || data.t2ServicePricing === 'con_precios') {
-        const hasImgWithoutPrice = items.some(item => item.image !== '' && item.price.trim() === '');
-        if (hasImgWithoutPrice) return true;
+    if (stepId === 'WELCOME') return false;
+    if (stepId === 'ACCOUNT_SYNC') return (data.mercadoLibreUser ?? '').trim() === '';
+    if (stepId === 'COMPANY_NAME') return (data.companyName ?? '').trim() === '';
+    if (stepId === 'BRAND_LOGO') return !data.noLogo && (data.logoUrl ?? '') === '';
+    
+    // Validación por sub-paso en BRAND_STYLE
+    if (stepId === 'BRAND_STYLE') {
+      if (brandSubStep === 0) {
+        return (data.primaryColor ?? '').trim() === '' || (data.secondaryColor ?? '').trim() === '';
       }
-      return !items.some(item => item.image !== '');
-    }
-    if (step === 'FEATURED') return data.featuredIds.length === 0;
-
-    if (step === 'SERVICES_DEF') {
-      const validServices = data.services.filter(s => s.title.trim() !== '' && s.description.trim() !== '');
-      return validServices.length < 6;
-    }
-    if (step === 'STRENGTHS') return data.strengths.trim() === '';
-
-    if (step === 'T3_FAQS') {
-      const validFaqs = data.t3Faqs.filter(f => f.question.trim() !== '' && f.answer.trim() !== '');
-      const hasIncomplete = data.t3Faqs.some(f => (f.question.trim() !== '' && f.answer.trim() === '') || (f.question.trim() === '' && f.answer.trim() !== ''));
-      return validFaqs.length === 0 || hasIncomplete;
+      if (brandSubStep === 1) {
+        return data.typography === '' || (data.typography === 'Otra' && (data.customTypography ?? '').trim() === '');
+      }
+      if (brandSubStep === 2) {
+        return data.backgroundTone === '';
+      }
+      return false;
     }
 
-    if (step === 'REVIEWS_NEW') {
-      if (data.useGoogleMapsReviews) return data.googleMapsLink.trim() === '';
-      return data.reviewsList.some(r => r.name.trim() === '' || r.text.trim() === '');
+    if (stepId === 'HERO_SECTION') {
+      if ((data.heroTitle ?? '').trim() === '' || (data.heroImage ?? '') === '') return true;
+      if (data.wantsMobileHero && (data.heroImageMobile ?? '') === '') return true;
+      return false;
     }
-    if (step === 'CONTACT_NEW') return data.whatsapp.trim() === ''; 
-    if (step === 'DOMAIN_TYPE') return data.domainType === '';
-    if (step === 'DOMAIN_OPTIONS') return data.domainOptionsList.some(d => d.trim() === '');
-    if (step === 'TERMS') return !data.acceptedTerms;
+    if (stepId === 'ABOUT_COMPANY') {
+      return (data.aboutText ?? '').trim() === '' || (data.aboutImage ?? '').trim() === '';
+    }
+    if (stepId === 'VALUE_PROPOSITION') {
+      return (data.strengths ?? '').trim() === '';
+    }
+    if (stepId === 'SERVICES_PORTFOLIO') {
+      const valid = (data.services ?? []).filter((s) => (s.title ?? '').trim() !== '' && (s.description ?? '').trim() !== '');
+      return valid.length < 6;
+    }
+    if (stepId === 'FAQS_SECTION') {
+      const valid = (data.faqs ?? []).filter((f) => (f.question ?? '').trim() !== '' && (f.answer ?? '').trim() !== '');
+      const hasIncomplete = (data.faqs ?? []).some(
+        (f) => ((f.question ?? '').trim() !== '' && (f.answer ?? '').trim() === '') ||
+               ((f.question ?? '').trim() === '' && (f.answer ?? '').trim() !== '')
+      );
+      return valid.length === 0 || hasIncomplete;
+    }
+    if (stepId === 'CLIENTS_TESTIMONIALS') {
+      if (data.useGoogleMapsReviews) return (data.googleMapsLink ?? '').trim() === '';
+      return (data.reviewsList ?? []).some((r) => (r.name ?? '').trim() === '' || (r.text ?? '').trim() === '');
+    }
+    if (stepId === 'CONTACT_CHANNELS') {
+      return (data.whatsapp ?? '').trim() === '' || (data.corporateEmail ?? '').trim() === '';
+    }
+    if (stepId === 'DOMAIN_PLAN') {
+      return !data.domainPlan;
+    }
+    if (stepId === 'DOMAIN_PREFERENCES' || stepId === 'DOMAIN_CHOICE') {
+      return (data.domainOption1 ?? '').trim() === '';
+    }
+    if (stepId === 'FINAL_REVIEW') {
+      return !data.acceptedTerms;
+    }
 
     return false;
   };
@@ -254,1295 +381,1924 @@ export default function Wizard() {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const cleanData = {
-        fechaCreacion: serverTimestamp(),
-        estadoProyecto: 'NUEVO',
-        usuarioML: data.mercadoLibreUser,
-        plantillaElegida: data.templateSelected,
-        upsells: {
-          t1Modo: data.t1MenuMode,
-          t2Dinamica: data.t2Dynamic,
-          t2ModoProd: data.t2ProductMode,
-          t2AgendaModo: data.t2AgendaMode,
-          t2AgendaLink: data.t2AgendaLink,
-          t2ServicePricing: data.t2ServicePricing
-        },
-        identidad: {
-          logoUrl: data.noLogo ? 'Requiere diseño de logo' : data.logoUrl,
-          colorPrincipal: data.primaryColor,
-          colorSecundario: data.secondaryColor,
-          tipografia: data.typography === 'Otra' ? data.customTypography : data.typography,
-          tonoFondo: data.backgroundTone
-        },
-        portada: {
-          tituloPrincipal: data.heroTitle,
-          imagenEscritorio: data.heroImage,
-          imagenCelular: data.wantsMobileHero ? data.heroImageMobile : 'Usar la misma'
-        },
-        categorias: data.categories.filter(c => c.name.trim() !== '').map(c => ({
-          nombreCategoria: c.name,
-          productos: c.items.filter(i => i.image !== '').map(i => ({ nombre: i.name, descripcion: i.description, precio: i.price, urlImagen: i.image, destacado: data.featuredIds.includes(i.id) }))
-        })),
-        archivoCatalogoMasivo: { url: data.t1BulkFileUrl, destacadosEscritos: data.t1BulkUploadMode ? data.t1BulkFeatured : [] },
-        servicios: data.services.filter(s => s.title.trim() !== '').map(s => ({ titulo: s.title, descripcion: s.description, iconoSugerido: s.iconHint })),
-        
-        ...(['T1', 'T3', 'T4'].includes(data.templateSelected) && {
-          sobreNosotros: { texto: data.aboutText, imagen: data.aboutImage }
-        }),
-        
-        ...(data.templateSelected === 'T1' && {
-          logistica: {
-            metodo: data.t1DeliveryMethod,
-            zonas: ['delivery', 'ambos'].includes(data.t1DeliveryMethod) ? data.t1DeliveryZones : null
-          },
-          estadisticas: data.stats,
-          eventos: data.offersEvents ? { titulo: data.eventTitle, descripcion: data.eventDescription } : null,
-        }),
-        ...(data.templateSelected === 'T2' && {
-          inspiracionHistoria: { texto: data.t2StoryText, imagenPrincipal: data.t2StoryImage },
-          diferencialMateriales: { texto: data.t2MaterialsText, imagenesGaleria: data.t2MaterialsImages.filter(img => img !== '') },
-          puntosFuertes: data.t2Strengths,
-        }),
-        ...(['T3', 'T4'].includes(data.templateSelected) && { porQueElegirnos: data.strengths }),
-        
-        ...(data.templateSelected === 'T3' && {
-          preguntasFrecuentes: data.t3Faqs.filter(f => f.question.trim() !== '' && f.answer.trim() !== '')
-        }),
+      const clientFolderName = getClientFolderName();
+      const safeClientSlug = (data.companyName || data.mercadoLibreUser || 'proyecto')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '_')
+        .replace(/_+/g, '_');
+      const documentId = `${safeClientSlug}_${Date.now().toString().slice(-6)}`;
+      const selectedPlanConfig = DOMAIN_PLANS[data.domainPlan] || DOMAIN_PLANS.free;
 
-        ...(data.templateSelected !== 'T3' && {
-          confianza: {
-            origenResenas: data.useGoogleMapsReviews ? 'Google Maps' : 'Manuales',
-            linkGoogleMaps: data.useGoogleMapsReviews ? data.googleMapsLink : null,
-            resenasManuales: data.useGoogleMapsReviews ? null : data.reviewsList
-          }
-        }),
-        contacto: { whatsapp: data.whatsapp, redSocial: data.socialLinks, direccionMapsLink: data.address || 'No tiene local' },
-        dominio: { tipo: data.domainType, opcionesNombres: data.domainType !== 'GRATIS' ? data.domainOptionsList : [] }
+      const cleanData = {
+        // METADATOS DEL REGISTRO
+        idProyecto: documentId,
+        fechaCreacion: serverTimestamp(),
+        fechaRegistroLocal: new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }),
+        estadoProyecto: selectedPlanConfig.isPaid ? 'PENDIENTE_PAGO_DOMINIO' : 'PENDIENTE_DIAGRAMACION',
+        origenFormulario: 'Template Corporativo - Sin dominio',
+
+        // 1. IDENTIFICACIÓN DEL CLIENTE
+        cliente: {
+          usuarioMercadoLibre: data.mercadoLibreUser,
+          nombreEmpresa: data.companyName,
+          eslogan: data.slogan || 'Sin eslogan definido',
+          carpetaCloudinary: `${CLOUDINARY_BASE_FOLDER}/${clientFolderName.replace(/[<>:"/\\|?*#]+/g, '_').replace(/\s+/g, '_')}`
+        },
+
+        // 2. IDENTIDAD VISUAL Y ESTILO
+        identidadVisual: {
+          logotipo: {
+            tieneLogo: !data.noLogo,
+            tipo: data.noLogo ? 'Requiere diseño tipográfico' : 'Logotipo oficial adjuntado',
+            url: data.noLogo ? null : (data.logoUrl || null)
+          },
+          paletaColores: {
+            colorPrimario: data.primaryColor || 'A definir por el diseñador',
+            colorSecundario: data.secondaryColor || 'A definir por el diseñador'
+          },
+          tipografia: {
+            opcion: data.typography || 'A criterio del diseñador',
+            detallePersonalizado: data.typography === 'Otra' ? data.customTypography : null
+          },
+          tonoVisual: data.backgroundTone || 'A criterio del diseñador'
+        },
+
+        // 3. PORTADA Y FOTOGRAFÍA HERO
+        portadaHero: {
+          tituloPrincipal: data.heroTitle,
+          imagenDesktopUrl: data.heroImage,
+          tieneImagenMobileDedicada: data.wantsMobileHero,
+          imagenMobileUrl: data.wantsMobileHero ? data.heroImageMobile : data.heroImage
+        },
+
+        // 4. SOBRE LA EMPRESA & PROPUESTA DE VALOR
+        sobreLaEmpresa: {
+          presentacionHistoria: data.aboutText,
+          fotografiaInstitucionalUrl: data.aboutImage || null,
+          porQueElegirnos: data.strengths
+        },
+
+        // 5. CARTERA DE SERVICIOS (6 SERVICIOS OBLIGATORIOS)
+        servicios: data.services.map((svc, index) => ({
+          posicion: index + 1,
+          titulo: svc.title,
+          descripcion: svc.description,
+          iconoSugerido: svc.iconHint || null
+        })),
+
+        // 6. PREGUNTAS FRECUENTES (FAQS)
+        preguntasFrecuentes: data.faqs
+          .filter((f) => (f.question ?? '').trim() !== '' && (f.answer ?? '').trim() !== '')
+          .map((faq, index) => ({
+            numero: index + 1,
+            pregunta: faq.question.trim(),
+            respuesta: faq.answer.trim()
+          })),
+
+        // 7. PRUEBA SOCIAL Y TESTIMONIOS
+        testimonios: {
+          modalidad: data.useGoogleMapsReviews ? 'Google Maps Verificado' : 'Carga Manual',
+          linkGoogleMaps: data.useGoogleMapsReviews ? data.googleMapsLink : null,
+          resenasManuales: data.useGoogleMapsReviews
+            ? []
+            : data.reviewsList
+                .filter((r) => (r.name ?? '').trim() || (r.text ?? '').trim())
+                .map((r) => ({
+                  autor: r.name,
+                  empresaOCargo: r.company || null,
+                  testimonio: r.text
+                }))
+        },
+
+        // 8. CANALES DE CONTACTO Y REDES
+        contacto: {
+          whatsapp: data.whatsapp,
+          emailCorporativo: data.corporateEmail,
+          redesSociales: {
+            instagram: data.instagram ? `@${data.instagram.replace('@', '')}` : null,
+            facebook: data.facebook || null,
+            linkedin: data.linkedin || null
+          },
+          direccionFisica: data.address || 'Oficinas corporativas / Modalidad remota'
+        },
+
+        // 9. DIRECCIÓN WEB Y DOMINIO
+        direccionWeb: {
+          tipoPlan: data.domainPlan,
+          nombrePlan: selectedPlanConfig.name,
+          extension: selectedPlanConfig.extension,
+          arancelOficial: selectedPlanConfig.priceNumber,
+          arancelFormateado: selectedPlanConfig.priceFormatted,
+          requierePagoMercadoPago: selectedPlanConfig.isPaid,
+          estadoPagoDominio: selectedPlanConfig.isPaid ? 'PENDIENTE_PAGO_MERCADOPAGO' : 'INCLUIDO_GRATIS',
+          linkMercadoPago: selectedPlanConfig.mercadoPagoLink || null,
+          dominioPrioridad1: data.domainOption1,
+          dominioPrioridad2: data.domainOption2 || null,
+          dominioPrioridad3: data.domainOption3 || null,
+          politicaRenovacion: selectedPlanConfig.isPaid
+            ? 'Arancel oficial de 1 año incluido; credenciales transferidas al cliente para renovar por su cuenta anualmente ante el ente oficial'
+            : 'Subdominio permanente en Vercel sin costos de renovación',
+          hostingCloud: '100% Gratuito en Vercel Ultra Speed (Jamstack SSL)'
+        },
+
+        // 10. CONDICIONES ACEPTADAS POR EL CLIENTE
+        terminosYCondiciones: {
+          aceptado: data.acceptedTerms,
+          fechaAceptacion: new Date().toISOString(),
+          clausulasValidadas: [
+            'Hosting Gratuito en Vercel',
+            'Estructura web fija y probada en el mercado (sin alterar secciones)',
+            'Reescritura de textos y optimización SEO para buscadores e IA',
+            'Previsualización previa y ronda de correcciones antes de producción',
+            selectedPlanConfig.isPaid
+              ? `Dominio oficial ${selectedPlanConfig.extension} por 1 año con arancel oficial abonado y transferencia de credenciales`
+              : 'Subdominio permanente en Vercel sin costos de renovación',
+            'Cliente Prioritario AG Digital Studio con atención continua'
+          ]
+        }
       };
 
-      const documentId = data.mercadoLibreUser.replace(/[^a-zA-Z0-9]/g, '_');
-      await setDoc(doc(db, "proyectos", documentId), cleanData);
-      
-      const totalToPay = calculateTotal();
+      await setDoc(doc(db, FIRESTORE_COLLECTION, documentId), cleanData);
 
-      if (totalToPay > 0) {
-        let paymentLink = "";
-        if (data.domainType === 'COM') paymentLink = "https://mpago.la/1WttGMk"; 
-        else if (data.domainType === 'COMAR') paymentLink = "https://mpago.la/1iLbwZF";
+      if (selectedPlanConfig.isPaid && selectedPlanConfig.mercadoPagoLink) {
+        const mpBase = selectedPlanConfig.mercadoPagoLink;
+        const redirectUrl = mpBase.includes('?')
+          ? `${mpBase}&external_reference=${encodeURIComponent(documentId)}`
+          : `${mpBase}?external_reference=${encodeURIComponent(documentId)}`;
 
-        if (paymentLink !== "") {
-            alert(`¡Toda tu información se guardó correctamente! 🎉\n\nEl total de tus adicionales es de $${totalToPay.toLocaleString('es-AR')}.\n\nSerás redirigido a Mercado Pago para completar tu pedido.`);
-            window.location.href = paymentLink;
-        } else {
-            alert("¡Éxito! 🎉\n\nTu formulario fue enviado a nuestro equipo. Como tu diseño y subdominio están bonificados, no tenés que abonar nada más. Nos pondremos a trabajar pronto.");
-        }
+        setSubmittedProject({
+          id: documentId,
+          companyName: data.companyName || data.mercadoLibreUser || 'Empresa Corporativa',
+          isPaid: true,
+          planName: selectedPlanConfig.name,
+          priceFormatted: selectedPlanConfig.priceFormatted,
+          redirectUrl: redirectUrl
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
 
+        // Redirige automáticamente al link de pago de Mercado Pago
+        setTimeout(() => {
+          window.location.href = redirectUrl;
+        }, 1200);
       } else {
-        alert("¡Éxito! 🎉\n\nTu formulario fue enviado a nuestro equipo. Como tu diseño y subdominio están bonificados, no tenés que abonar nada más. Nos pondremos a trabajar pronto.");
+        setSubmittedProject({
+          id: documentId,
+          companyName: data.companyName || data.mercadoLibreUser || 'Empresa Corporativa',
+          isPaid: false,
+          planName: selectedPlanConfig.name,
+          priceFormatted: selectedPlanConfig.priceFormatted
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-
     } catch (error) {
-      alert("Hubo un problema guardando tu formulario. Por favor, revisá tu conexión o contactanos.");
+      console.error('Error registrando el formulario en Firestore:', error);
+      alert('Hubo un inconveniente al registrar tu formulario. Por favor, verifica tu conexión a internet.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const slideVariants = { enter: { y: 30, opacity: 0 }, center: { y: 0, opacity: 1 }, exit: { y: -30, opacity: 0 } };
+  const progressPercent = Math.round((currentStepIndex / (STEPS.length - 1)) * 100);
+
+  const slideVariants = {
+    enter: (dir: number) => ({
+      x: dir > 0 ? 25 : -25,
+      opacity: 0,
+      scale: 0.99
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+      scale: 1
+    },
+    exit: (dir: number) => ({
+      x: dir > 0 ? -25 : 25,
+      opacity: 0,
+      scale: 0.99
+    })
+  };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans flex flex-col items-center pt-16 md:pt-20 px-4 relative selection:bg-blue-200">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans flex flex-col items-center pt-20 sm:pt-24 px-3 sm:px-6 relative selection:bg-slate-950 selection:text-white">
       
-      {/* NAVEGACIÓN SUPERIOR FIJA */}
-      <div className="fixed top-0 left-0 w-full flex flex-col items-center z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm pt-safe-top py-2.5 md:py-3 px-4 md:px-8">
-        <div className="w-full max-w-4xl flex items-center justify-between">
-          <img src="/assets/Logo.webp" alt="Logo" className="h-6 md:h-8 w-auto opacity-90" />
+      {/* HEADER SUPERIOR FIJO REDISEÑADO */}
+      <header className="fixed top-0 left-0 w-full flex flex-col items-center z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/70 shadow-[0_4px_24px_-4px_rgba(15,23,42,0.04)]">
+        <div className={`w-full ${currentStep.id === 'DOMAIN_PLAN' ? 'max-w-6xl' : 'max-w-4xl'} px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-4 transition-all duration-300`}>
           
-          {currentStep.id !== 'WELCOME' && currentStep.id !== 'END' && (
-            <div className="flex gap-1 md:gap-1.5">
-              {steps.map((s, i) => (
-                <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${i === currentStepIndex ? 'w-5 md:w-7 bg-blue-600' : i < currentStepIndex ? 'w-1.5 bg-blue-300' : 'w-1.5 bg-slate-200'}`} />
-              ))}
+          {/* BRANDING ELEGANTE & MINIMALISTA */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 p-1">
+              <img 
+                src="/assets/Logo.webp" 
+                alt="AG Logo" 
+                className="h-7 sm:h-8 w-auto object-contain shrink-0" 
+              />
+              <div className="flex flex-col">
+                <span className="text-xs sm:text-sm font-bold text-slate-950 tracking-tight leading-none">
+                  Portal Corporativo
+                </span>
+                <span className="text-[11px] font-medium text-slate-500 mt-0.5">
+                  AG Digital Studio
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* INDICADOR DE PASO MINIMALISTA */}
+          {currentStep.id !== 'WELCOME' && (
+            <div className="flex items-center">
+              <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-100/90 border border-slate-200/80 text-xs text-slate-600">
+                <span className="font-medium">Paso</span>
+                <span className="font-bold text-slate-950">{currentStepIndex}</span>
+                <span className="text-slate-400">de</span>
+                <span className="font-medium text-slate-600">{STEPS.length - 1}</span>
+              </div>
             </div>
           )}
         </div>
-      </div>
+
+        {/* LÍNEA DE PROGRESO MINIMALISTA */}
+        {currentStep.id !== 'WELCOME' && (
+          <div className="w-full h-[2px] bg-slate-100 relative overflow-hidden">
+            <motion.div
+              className="h-full bg-slate-900"
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPercent}%` }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+            />
+          </div>
+        )}
+      </header>
 
       {/* CONTENEDOR PRINCIPAL */}
-      <div className="w-full max-w-4xl flex flex-col pb-28 md:pb-32 mt-3 md:mt-5">
-        <AnimatePresence mode="wait">
-          <motion.div key={currentStep.id} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.4, ease: "easeOut" }} className="w-full flex flex-col justify-center">
-            
-            {/* === WELCOME === */}
+      {submittedProject ? (
+        <main className="w-full max-w-2xl flex flex-col items-center justify-center py-6 sm:py-10 px-2 sm:px-0">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full glass-panel rounded-3xl p-6 sm:p-10 shadow-xl border border-slate-200/90 flex flex-col items-center text-center gap-6"
+          >
+            {/* ÍCONO DE ÉXITO */}
+            <div className="relative flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-slate-950 text-white flex items-center justify-center shadow-lg border border-slate-800">
+                <CheckCircle2 size={40} className="text-white" />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 max-w-lg">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                Orden #{submittedProject.id.toUpperCase()} · {submittedProject.isPaid ? 'Ficha Recibida & Pago en Proceso' : 'Recibida'}
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight leading-tight">
+                ¡Ficha Corporativa Registrada con Éxito!
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Los datos y archivos de <strong className="text-slate-900 font-bold">{submittedProject.companyName}</strong> fueron sincronizados correctamente en la base de datos de <strong className="text-slate-900 font-bold">AG Digital Studio</strong>.
+              </p>
+            </div>
+
+            {/* AVISO DE REDIRECCIÓN A MERCADO PAGO SI ES DE PAGO */}
+            {submittedProject.isPaid && (
+              <div className="w-full rounded-2xl bg-blue-50/80 border border-blue-200/90 p-4 sm:p-4.5 flex items-center justify-between gap-3 text-left">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#009EE3] text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <MercadoPagoIcon size={20} />
+                  </div>
+                  <div className="flex flex-col text-xs text-slate-700 leading-snug">
+                    <span className="font-bold text-slate-950 text-sm">
+                      Conectando con Checkout de Mercado Pago
+                    </span>
+                    <span>
+                      Se está procesando la redirección para abonar el arancel oficial del dominio ({submittedProject.priceFormatted}). Si tu navegador no redirige automáticamente, haz clic en el botón azul.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ESTADO DE ALMACENAMIENTO */}
+            <div className="w-full rounded-2xl bg-slate-50/90 border border-slate-200/80 p-4 sm:p-5 flex flex-col gap-3 text-left text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 font-semibold text-slate-700">
+                <span>Estado de Almacenamiento & Despliegue</span>
+                <span className="text-emerald-700 font-bold text-[11px] bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  Sincronizado
+                </span>
+              </div>
+              <div className="flex flex-col gap-2 text-slate-600">
+                <div className="flex items-baseline gap-2">
+                  <span className="w-32 shrink-0 font-medium text-slate-500">Base de Datos:</span>
+                  <span className="font-semibold text-slate-900 truncate">Firebase Firestore (Colección {FIRESTORE_COLLECTION})</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="w-32 shrink-0 font-medium text-slate-500">Plan de Dominio:</span>
+                  <span className="font-semibold text-slate-900 truncate">
+                    {submittedProject.planName || 'Configurado'} ({submittedProject.priceFormatted || 'Incluido'})
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="w-32 shrink-0 font-medium text-slate-500">Bóveda de Medios:</span>
+                  <span className="font-semibold text-slate-900 truncate">Cloudinary /{CLOUDINARY_BASE_FOLDER}/{getClientFolderName()}</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="w-32 shrink-0 font-medium text-slate-500">Hosting Cloud:</span>
+                  <span className="font-semibold text-slate-900 truncate">Infraestructura Vercel (Gratuito Jamstack SSL)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* PRÓXIMOS PASOS */}
+            <div className="w-full rounded-2xl bg-slate-900 text-white p-5 text-left flex flex-col gap-3 shadow-md">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                ¿Qué sucede a continuación?
+              </span>
+              <ul className="flex flex-col gap-2.5 text-xs text-slate-300 leading-relaxed">
+                <li className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                  <span><strong>Optimización SEO & Redacción IA:</strong> Nuestro equipo perfecciona los textos y títulos para posicionar en Google y motores de IA.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                  <span><strong>Previsualización Privada:</strong> Te enviaremos un link privado para revisar el diseño antes de la publicación final.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                  <span><strong>Entrega & Autonomía:</strong> Traspaso de credenciales completas para tu total control y libertad técnica.</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* BOTONES DE ACCIÓN */}
+            <div className="w-full flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              {submittedProject.isPaid && submittedProject.redirectUrl && (
+                <a
+                  href={submittedProject.redirectUrl}
+                  target="_self"
+                  className="w-full sm:w-auto h-13 px-7 rounded-2xl bg-[#009EE3] hover:bg-[#0089C7] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all cursor-pointer"
+                >
+                  <MercadoPagoIcon size={18} />
+                  <span>Abonar en Mercado Pago ({submittedProject.priceFormatted})</span>
+                </a>
+              )}
+              <a
+                href={`https://wa.me/5491100000000?text=${encodeURIComponent(
+                  `¡Hola AG Digital Studio! Acabo de enviar el formulario de onboarding para mi empresa "${submittedProject.companyName}" (Orden #${submittedProject.id.toUpperCase()}).`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto h-13 px-8 rounded-2xl bg-slate-950 hover:bg-slate-900 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all cursor-pointer border border-slate-800"
+              >
+                <WhatsAppIcon size={17} className="text-white" />
+                <span>Avisar al equipo por WhatsApp</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setSubmittedProject(null);
+                  setCurrentStepIndex(0);
+                  setData(initialData);
+                }}
+                className="w-full sm:w-auto h-13 px-6 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 border border-slate-200 transition-all cursor-pointer"
+              >
+                <span>Cargar otro formulario</span>
+              </button>
+            </div>
+          </motion.div>
+        </main>
+      ) : (
+        <main className={`w-full ${currentStep.id === 'DOMAIN_PLAN' ? 'max-w-6xl' : 'max-w-3xl'} flex flex-col pb-40 sm:pb-36 mt-2 sm:mt-4 px-2 sm:px-0 transition-all duration-300`}>
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={currentStep.id}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full flex flex-col justify-center"
+            >
+
+            {/* ============================================================ */}
+            {/* STEP 0: WELCOME */}
+            {/* ============================================================ */}
             {currentStep.id === 'WELCOME' && (
-              <div className="flex flex-col items-center text-center gap-4 md:gap-6 py-10">
-                <motion.div initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.5, duration: 0.8 }} className="w-24 h-24 md:w-28 md:h-28 bg-white text-blue-600 rounded-full flex items-center justify-center mb-2 shadow-xl shadow-blue-100/50"><PartyPopper size={48} className="md:w-14 md:h-14" /></motion.div>
-                <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight leading-tight">¡Gracias por tu compra!</h1>
-                <p className="text-lg md:text-2xl text-slate-500 max-w-2xl leading-relaxed">Estamos emocionados de empezar a construir tu nueva presencia digital. Diseñamos este asistente para que nos cuentes sobre tu marca de forma súper fácil y a tu ritmo.</p>
-                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mt-2 max-w-xl text-left md:text-center">
-                  <p className="text-blue-800 text-sm md:text-base"><span className="font-bold">💡 Tip importante:</span> No te preocupes por la redacción perfecta de los textos. Nuestro equipo va a revisar y optimizar todo para asegurar que quede profesional. Solo dejanos tus ideas.</p>
-                </div>
-                <button onClick={nextStep} className="mt-4 px-8 md:px-12 py-4 md:py-5 bg-blue-600 text-white rounded-full font-bold text-lg md:text-xl flex items-center gap-3 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-blue-600/30 w-full md:w-auto justify-center">
-                  <Sparkles size={24} /> Empezar a crear
-                </button>
-              </div>
+              <StepWelcome 
+                onStart={nextStep} 
+                demoUrl={DEFAULT_CORPORATE_DEMO_URL} 
+              />
             )}
 
-            {currentStep.id === 'ML_USER' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-2xl mx-auto w-full py-6">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0 md:mb-2 text-center">Paso 1 de vinculación</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 text-center">¿Cuál es tu usuario de Mercado Libre?</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-2 text-center">Lo necesitamos obligatoriamente para vincular esta información con tu compra de forma segura.</p>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-2 md:mb-4">
-                  <p className="text-slate-600 text-base md:text-lg text-center">Podés poner tu apodo de Mercado Libre (Ej: JUANPEREZ_VENTAS) o el correo electrónico con el que hiciste la compra.</p>
-                </div>
-                <input type="text" value={data.mercadoLibreUser} onChange={(e) => handleInputChange('mercadoLibreUser', e.target.value)} placeholder="Ej: JUANPEREZ_VENTAS" className="w-full text-xl md:text-2xl text-center bg-white border-2 border-slate-200 rounded-2xl md:rounded-3xl focus:border-blue-500 outline-none p-5 md:p-6 transition-all shadow-sm" autoFocus />
-              </div>
-            )}
-
-            {/* SELECCIÓN DE TEMPLATE CON DEMOS */}
-            {currentStep.id === 'TEMPLATE' && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-4xl mx-auto">
-                <div className="flex flex-col text-center px-2">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Estructura Base</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2">¿Qué plantilla desea usar?</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mb-0 max-w-2xl mx-auto">Puede ver una demostración en vivo tocando el botón azul de cada opción.</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 px-2 md:px-4">
-                  {TEMPLATES.map((tpl) => (
-                    <div key={tpl.id} className={`group relative rounded-[1.5rem] md:rounded-[2rem] border-4 flex flex-col transition-all duration-300 overflow-hidden ${data.templateSelected === tpl.id ? 'border-blue-500 shadow-xl shadow-blue-500/20 scale-[1.02]' : 'border-white bg-white hover:border-blue-200 hover:shadow-md'}`}>
-                      <button onClick={() => handleInputChange('templateSelected', tpl.id)} className="w-full text-left flex-1 focus:outline-none">
-                        <div className="h-48 md:h-56 w-full overflow-hidden relative bg-slate-50 flex items-center justify-center p-4">
-                          <img src={tpl.img} alt={tpl.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-700" />
-                          {data.templateSelected === tpl.id && <div className="absolute inset-0 bg-blue-500/5 transition-colors" />}
-                        </div>
-                        <div className="p-4 md:p-5 bg-white flex items-center justify-between border-t border-slate-100">
-                          <span className={`font-black text-lg md:text-2xl ${data.templateSelected === tpl.id ? 'text-blue-600' : 'text-slate-800'}`}>{tpl.name}</span>
-                          <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full border-2 flex items-center justify-center transition-colors ${data.templateSelected === tpl.id ? 'border-blue-500 bg-blue-500' : 'border-slate-200'}`}>{data.templateSelected === tpl.id && <div className="w-2.5 h-2.5 md:w-3 md:h-3 bg-white rounded-full" />}</div>
-                        </div>
-                      </button>
-                      <a href={tpl.link} target="_blank" rel="noopener noreferrer" className="w-full py-4 bg-blue-50 hover:bg-blue-100 text-blue-700 text-center font-bold text-base md:text-lg flex justify-center items-center gap-2 border-t border-blue-100 transition-colors">
-                        Ver Demo en vivo <ExternalLink size={18} />
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'LOGO' && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-xl mx-auto py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase text-center mb-0">Identidad Visual</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-center text-slate-900">Subí tu logo oficial</h2>
-                <p className="text-lg md:text-2xl text-slate-500 text-center mb-2 md:mb-4 px-2">Si la imagen tiene fondo blanco o es cuadrada, subila igual. Nuestro equipo de diseño la va a limpiar y adaptar.</p>
-                
-                <AnimatePresence>
-                  {!data.noLogo && (
-                    <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} exit={{opacity:0, height:0}} className="flex flex-col items-center w-full mb-2 px-2">
-                      <div className="w-full bg-white rounded-2xl md:rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div className="w-full bg-slate-50 border-b border-slate-200 h-12 md:h-14 flex items-center justify-center relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-[shimmer_2s_infinite]" />
-                          <div className="px-3 py-1 bg-blue-100/50 rounded-lg flex items-center text-blue-600 relative z-10 font-black tracking-widest text-[10px] md:text-xs"><ImageIcon size={16} className="mr-2" /> AQUÍ VA TU LOGO</div>
-                        </div>
-                        <div className="p-4 md:p-6 bg-white">
-                          <ImageUpload userId={data.mercadoLibreUser} value={data.logoUrl} onChange={(url) => handleInputChange('logoUrl', url)} />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <label className="flex items-center gap-3 md:gap-4 p-4 md:p-6 bg-slate-50/50 border-2 border-slate-200 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-all shadow-sm mx-2 md:mx-0">
-                  <input type="checkbox" checked={data.noLogo} onChange={(e) => { handleInputChange('noLogo', e.target.checked); if(e.target.checked) handleInputChange('logoUrl', ''); }} className="w-6 h-6 md:w-8 md:h-8 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="text-slate-800 font-bold text-lg md:text-xl">No tengo logo aún.</span>
-                    <span className="text-slate-500 text-sm md:text-base">Marcá esta opción y nuestro equipo armará tu marca con una linda tipografía sin costo extra.</span>
-                  </div>
-                </label>
-              </div>
-            )}
-
-            {currentStep.id === 'COLORS' && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-3xl mx-auto text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Identidad Visual</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">Definí tus colores</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-2">Es vital para que la web respete tu marca. Podés escribir el código exacto o contarnos qué tonos te gustan.</p>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl md:rounded-2xl p-3 md:p-4 mb-2 text-left">
-                  <p className="text-amber-800 text-sm md:text-base">⚠️ Si nos pediste que te diseñemos el logo en el paso anterior, acá decinos con qué colores te gustaría que lo hagamos.</p>
-                </div>
-                <div className="flex flex-col md:flex-row gap-4 text-left">
-                  <div className="flex-1 bg-white p-5 rounded-2xl border-2 border-slate-100 shadow-sm focus-within:border-blue-500 transition-colors">
-                    <label className="font-bold text-slate-700 text-lg md:text-xl flex items-center gap-2 mb-1"><div className="w-4 h-4 rounded-full bg-blue-600"></div> Color Principal</label>
-                    <p className="text-sm md:text-base text-slate-400 mb-2 md:mb-3 min-h-[30px] md:min-h-[40px]">Se usará para botones, precios y detalles importantes que queremos destacar.</p>
-                    <input type="text" value={data.primaryColor} onChange={(e)=>handleInputChange('primaryColor', e.target.value)} placeholder="Ej: 'Azul marino oscuro'" className="w-full text-lg md:text-xl bg-slate-50 rounded-xl outline-none p-4 text-slate-900 font-medium" />
-                  </div>
-                  <div className="flex-1 bg-white p-5 rounded-2xl border-2 border-slate-100 shadow-sm focus-within:border-slate-400 transition-colors">
-                    <label className="font-bold text-slate-700 text-lg md:text-xl flex items-center gap-2 mb-1"><div className="w-4 h-4 rounded-full border-2 border-slate-300"></div> Color Secundario</label>
-                    <p className="text-sm md:text-base text-slate-400 mb-2 md:mb-3 min-h-[30px] md:min-h-[40px]">Se usará para fondos sutiles, secciones secundarias o bordes.</p>
-                    <input type="text" value={data.secondaryColor} onChange={(e)=>handleInputChange('secondaryColor', e.target.value)} placeholder="Ej: 'Beige clarito tipo madera'" className="w-full text-lg md:text-xl bg-slate-50 rounded-xl outline-none p-4 text-slate-900 font-medium" />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'TYPOGRAPHY' && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-2xl mx-auto px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0 text-center">Identidad Visual</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-center text-slate-900">Estilo de letra</h2>
-                <p className="text-lg md:text-2xl text-center text-slate-500 mb-2">Elegí la "vibra" que mejor represente a tu marca. Esto cambia por completo la sensación visual de la página.</p>
-                <div className="grid gap-3 md:gap-4 mt-2">
-                  <button onClick={() => handleInputChange('typography', 'Sans Serif')} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all flex items-center justify-between ${data.typography === 'Sans Serif' ? 'border-blue-500 bg-blue-50 shadow-xl scale-[1.02]' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-                    <div className="flex items-center gap-4 pr-2">
-                      <div className={`p-4 rounded-2xl shrink-0 ${data.typography === 'Sans Serif' ? 'bg-blue-200 text-blue-700' : 'bg-slate-100 text-slate-400'}`}><Type size={28} /></div>
-                      <div className="flex flex-col"><span className="text-2xl md:text-3xl font-bold text-slate-800 leading-none mb-1" style={{fontFamily: 'sans-serif'}}>Moderna y Limpia</span><span className="text-sm md:text-base text-slate-500 leading-tight">Estilo Sans Serif (Sin remates). Ideal para rubros tech o marcas jóvenes.</span></div>
-                    </div>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center shrink-0 transition-colors ${data.typography === 'Sans Serif' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>{data.typography === 'Sans Serif' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                  </button>
-                  <button onClick={() => handleInputChange('typography', 'Serif')} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all flex items-center justify-between ${data.typography === 'Serif' ? 'border-blue-500 bg-blue-50 shadow-xl scale-[1.02]' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-                    <div className="flex items-center gap-4 pr-2">
-                      <div className={`p-4 rounded-2xl shrink-0 ${data.typography === 'Serif' ? 'bg-blue-200 text-blue-700' : 'bg-slate-100 text-slate-400'}`}><Type size={28} /></div>
-                      <div className="flex flex-col"><span className="text-2xl md:text-3xl font-bold text-slate-800 leading-none mb-1" style={{fontFamily: 'serif'}}>Clásica y Elegante</span><span className="text-sm md:text-base text-slate-500 leading-tight">Estilo Serif (Con remates). Ideal para mueblerías finas o marcas premium.</span></div>
-                    </div>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center shrink-0 transition-colors ${data.typography === 'Serif' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>{data.typography === 'Serif' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                  </button>
-                  <button onClick={() => handleInputChange('typography', 'Otra')} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all flex flex-col gap-4 ${data.typography === 'Otra' ? 'border-blue-500 bg-blue-50 shadow-xl scale-[1.02]' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-4 pr-2"><div className={`p-4 rounded-2xl shrink-0 ${data.typography === 'Otra' ? 'bg-blue-200 text-blue-700' : 'bg-slate-100 text-slate-400'}`}><Type size={28}/></div>
-                      <div className="flex flex-col"><span className="text-2xl md:text-3xl font-bold text-slate-800 leading-none mb-1">Otra diferente</span><span className="text-sm md:text-base text-slate-500 leading-tight">Ya sé qué fuente de Google Fonts quiero usar.</span></div>
-                      </div>
-                      <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center shrink-0 transition-colors ${data.typography === 'Otra' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>{data.typography === 'Otra' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                    </div>
-                    {data.typography === 'Otra' && (
-                      <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} className="w-full mt-1 pl-[4.5rem]">
-                        <input type="text" value={data.customTypography} onChange={e=>handleInputChange('customTypography', e.target.value)} placeholder="Ej: Montserrat, Roboto..." className="w-full bg-white border-2 border-slate-200 rounded-xl p-4 outline-none focus:border-blue-500 transition-all text-xl font-medium" autoFocus />
-                      </motion.div>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'BACKGROUND' && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-2xl mx-auto px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0 text-center">Identidad Visual</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-center text-slate-900">Tono del fondo principal</h2>
-                <p className="text-lg md:text-2xl text-center text-slate-500 mb-2">Definí la base sobre la que vamos a mostrar tus productos para que resalten al máximo.</p>
-                <div className="grid gap-3 md:gap-4 mt-2">
-                  {['Tonos Claros (Luminoso, limpio y clásico)', 'Tonos Oscuros (Elegante, premium y moderno)', 'A criterio del diseñador (Confío en ustedes)'].map((tono) => (
-                    <button key={tono} onClick={() => handleInputChange('backgroundTone', tono)} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all flex items-center justify-between ${data.backgroundTone === tono ? 'border-blue-500 bg-blue-50 shadow-xl scale-[1.02]' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-                      <span className="text-xl md:text-2xl font-bold text-slate-800 pr-2 leading-tight">{tono}</span>
-                      <div className={`w-8 h-8 rounded-full border-[3px] flex items-center justify-center shrink-0 transition-colors ${data.backgroundTone === tono ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>{data.backgroundTone === tono && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'HERO_TITLE' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-2xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Primer Impacto</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">¿Qué querés transmitir al entrar?</h2>
-                <p className="text-lg md:text-2xl text-slate-500">Este será el título principal de tu web. Lo primero que leen.</p>
-                <div className="flex items-start gap-4 bg-blue-50 p-5 rounded-2xl text-left border border-blue-100 shadow-sm mt-1">
-                  <Info className="text-blue-500 shrink-0 mt-0.5" size={24} />
-                  <div className="flex flex-col gap-1">
-                    <p className="font-bold text-blue-900 text-base md:text-lg">No te compliques buscando la frase perfecta.</p>
-                    <p className="text-blue-800 text-sm md:text-base leading-relaxed">Solo dejá tu idea en bruto (Ej: <i>"Vendemos muebles de autor en CABA"</i>) y nuestro equipo de SEO lo va a transformar en un título corto y súper atractivo que convierta.</p>
-                  </div>
-                </div>
-                <div className="relative mt-2">
-                  <textarea value={data.heroTitle} onChange={(e) => handleInputChange('heroTitle', e.target.value)} placeholder="Escribí tu idea principal acá. Es obligatorio para avanzar..." className="w-full text-xl md:text-2xl text-center bg-white border-2 border-slate-200 rounded-3xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none p-8 md:p-10 transition-all min-h-[160px] md:min-h-[220px] resize-none shadow-sm" autoFocus />
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'HERO_DESKTOP' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full px-2 md:px-0 py-4 text-center">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Primer Impacto</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2">Foto de Portada Principal</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-4">Esta es la foto gigante que verán tus clientes al entrar desde una computadora. Debe ser la de mejor calidad que tengas.</p>
-                
-                <div className="w-full max-w-md mx-auto relative mb-4">
-                  <motion.div animate={{ y: [0, -10, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }} className="w-full bg-white rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden flex flex-col">
-                    <div className="h-8 bg-slate-50 flex items-center px-4 gap-2 border-b border-slate-100"><div className="w-3 h-3 rounded-full bg-red-400"></div><div className="w-3 h-3 rounded-full bg-amber-400"></div><div className="w-3 h-3 rounded-full bg-green-400"></div></div>
-                    <div className="h-32 m-4 bg-blue-50 border-2 border-dashed border-blue-200 rounded-xl relative flex items-center justify-center">
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-[shimmer_2s_infinite]" />
-                      <span className="font-black tracking-widest text-xs text-blue-500 flex items-center gap-2"><Monitor size={16}/> FOTO HORIZONTAL</span>
-                    </div>
-                  </motion.div>
-                </div>
-                <div className="w-full p-6 bg-white border-2 border-slate-100 rounded-[2.5rem] shadow-sm"><ImageUpload userId={data.mercadoLibreUser} value={data.heroImage} onChange={(url) => handleInputChange('heroImage', url)} /></div>
-
-                {data.templateSelected !== 'T4' && (
-                  <label className="flex items-start md:items-center gap-4 p-6 bg-blue-50/50 border-2 border-blue-100 rounded-2xl cursor-pointer hover:border-blue-300 transition-colors mt-4 text-left">
-                    <input type="checkbox" checked={data.wantsMobileHero} onChange={(e) => handleInputChange('wantsMobileHero', e.target.checked)} className="w-6 h-6 mt-1 md:mt-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="text-blue-900 font-bold text-lg md:text-xl leading-tight mb-1">Quiero subir una foto distinta adaptada para celulares.</span>
-                      <span className="text-blue-700 text-sm md:text-base leading-relaxed">Altamente recomendado. Si no marcás esto, el sistema va a recortar automáticamente la foto horizontal de arriba.</span>
-                    </div>
-                  </label>
-                )}
-              </div>
-            )}
-
-            {currentStep.id === 'HERO_MOBILE' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-xl mx-auto w-full items-center text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Primer Impacto</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">Portada para Celular</h2>
-                <p className="text-lg md:text-2xl text-slate-500">Más del 80% de tus clientes van a entrar a tu web desde el celu. Una foto vertical (formato Reel/Tiktok) hace que la página se vea inmensamente superior.</p>
-                
-                <motion.div animate={{ y: [0, -10, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }} className="w-40 h-64 bg-white rounded-[2rem] shadow-2xl shadow-slate-300/50 border-[6px] border-slate-800 overflow-hidden flex flex-col relative mb-4 mt-6">
-                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-4 bg-slate-800 rounded-b-xl z-30"></div>
-                   <div className="flex-1 m-3 bg-blue-50 border-2 border-dashed border-blue-200 rounded-xl relative flex items-center justify-center mt-8">
-                    <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/50 to-transparent animate-[shimmer_2s_infinite]" />
-                    <span className="font-black text-[10px] tracking-widest text-blue-500 flex flex-col items-center gap-1"><Smartphone size={24}/> VERTICAL</span>
-                   </div>
-                </motion.div>
-                <div className="w-full p-6 bg-white border-2 border-slate-100 rounded-[2.5rem] shadow-sm"><ImageUpload userId={data.mercadoLibreUser} label="" value={data.heroImageMobile} onChange={(url) => handleInputChange('heroImageMobile', url)} /></div>
-              </div>
-            )}
-
-            {currentStep.id === 'T1_ABOUT' && (
-              <div className="flex flex-col gap-4 max-w-2xl mx-auto w-full text-center px-2 md:px-0 py-2">
-                <p className="text-xs md:text-sm font-bold tracking-widest text-blue-500 uppercase mb-0">Sobre Nosotros</p>
-                <h2 className="text-2xl md:text-3xl font-black leading-tight text-slate-900 mb-1">Contanos de ustedes</h2>
-                <div className="flex items-start gap-3 bg-blue-50 p-4 rounded-2xl text-left border border-blue-100 max-w-2xl mx-auto mb-2">
-                  <Info className="text-blue-500 shrink-0 mt-0.5" size={20} />
-                  <p className="text-blue-800 text-sm leading-relaxed">
-                    A los clientes les gusta saber quién está detrás del negocio. Hace cuánto hacen lo que hacen, por qué eligieron este rubro... Nuestro equipo de redacción se va a encargar de darle un tono emocional y profesional.
-                  </p>
-                </div>
-                <div className="w-full text-left bg-white p-5 md:p-6 rounded-[1.75rem] border-2 border-slate-200 shadow-sm focus-within:border-blue-500 transition-colors">
-                  <label className="block font-bold text-slate-700 text-base md:text-lg mb-2">
-                    Tu historia o presentación
-                  </label>
-                  <textarea 
-                    value={data.aboutText} 
-                    onChange={(e) => handleInputChange('aboutText', e.target.value)} 
-                    placeholder={data.templateSelected === 'T1' 
-                      ? "Ej: Todo empezó en 2018 con una receta familiar. Nos encanta ver a la gente disfrutar de lo que hacemos..." 
-                      : "Ej: Somos un equipo de profesionales apasionados. Arrancamos hace unos años y hoy trabajamos para brindar la mejor atención..."} 
-                    className="w-full text-base md:text-lg bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none p-4 md:p-5 min-h-[180px] resize-none transition-all shadow-inner" 
-                  />
-                  <p className="text-xs text-slate-400 mt-2">
-                    Escribilo con tus palabras, nuestro equipo se encarga de pulirlo y dejarlo perfecto.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* --- UPSELL T1 (SaaS PRICING CARDS) --- */}
-            {currentStep.id === 'T1_UPSELL' && (
-              <div className="flex flex-col gap-4 md:gap-5 max-w-4xl mx-auto w-full text-center px-2 md:px-0 py-2">
-                <p className="text-xs md:text-sm font-bold tracking-widest text-blue-500 uppercase mb-0">Estructura</p>
-                <h2 className="text-2xl md:text-3xl font-black leading-tight text-slate-900 flex items-center justify-center gap-2.5">
-                  <ShoppingCart className="text-blue-500 w-7 h-7 md:w-8 md:h-8"/> Elegí el modo de tu menú
-                </h2>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-2 text-left">
-                  
-                  {/* CARD 1: BASE */}
-                  <div onClick={() => handleInputChange('t1MenuMode', 'abierto')} className={`relative h-full flex flex-col p-5 md:p-6 rounded-[1.75rem] border-2 transition-all duration-300 cursor-pointer ${data.t1MenuMode === 'abierto' ? 'border-blue-600 bg-blue-50/20 shadow-xl ring-4 ring-blue-600/10 scale-[1.01]' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg'}`}>
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-slate-500 font-bold tracking-widest text-xs uppercase bg-slate-100 px-3 py-1 rounded-full">Plan Base</span>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${data.t1MenuMode === 'abierto' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
-                        {data.t1MenuMode === 'abierto' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                      </div>
-                    </div>
-                    <h3 className="text-xl md:text-2xl font-black text-slate-800 mb-1">Catálogo de Exhibición</h3>
-                    <div className="flex items-baseline gap-2 mb-4">
-                      <span className="text-2xl md:text-3xl font-black text-slate-900">Incluido</span>
-                      <span className="text-emerald-700 font-bold text-xs bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">¡Bonificado!</span>
-                    </div>
-                    <div className="w-full h-[1px] bg-slate-100 mb-4" />
-                    
-                    <ul className="flex flex-col gap-3 flex-grow text-xs md:text-sm">
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Exhibición visual del catálogo:</strong> Presentación estética de tu línea de productos (sin visualización tarifaria).</span></li>
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Canal de consulta directa:</strong> Botones de contacto individual enlazados a tu WhatsApp corporativo.</span></li>
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Identidad corporativa:</strong> Diseño profesional adaptado a los colores y lineamientos de tu marca.</span></li>
-                      <li className="flex items-start gap-2.5 mt-auto pt-3 border-t border-slate-50"><X className="w-4 h-4 text-red-400 shrink-0 mt-0.5"/><span className="text-slate-500 leading-relaxed"><strong>Limitación técnica:</strong> Este plan opera exclusivamente como vitrina. No incluye motor de ventas, carrito interactivo ni automatización de pedidos.</span></li>
-                    </ul>
-                  </div>
-
-                  {/* CARD 2: PREMIUM */}
-                  <div onClick={() => handleInputChange('t1MenuMode', 'ecommerce')} className={`relative h-full flex flex-col p-5 md:p-6 rounded-[1.75rem] border-2 transition-all duration-300 cursor-pointer ${data.t1MenuMode === 'ecommerce' ? 'border-emerald-500 bg-emerald-50/10 shadow-2xl ring-4 ring-emerald-500/20 scale-[1.01]' : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-xl'}`}>
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 py-1 rounded-full text-[11px] font-black tracking-widest shadow-md flex items-center gap-1.5 w-max">
-                      <TrendingUp size={13} /> POTENCIA TUS VENTAS
-                    </div>
-                    
-                    <div className="flex justify-between items-center mb-3 mt-1">
-                      <span className="text-emerald-700 font-bold tracking-widest text-xs uppercase bg-emerald-100 px-3 py-1 rounded-full">Módulo Alta Conversión</span>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${data.t1MenuMode === 'ecommerce' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'}`}>
-                        {data.t1MenuMode === 'ecommerce' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                      </div>
-                    </div>
-                    <h3 className="text-xl md:text-2xl font-black text-slate-800 mb-1">E-Commerce Lite</h3>
-                    <div className="flex items-baseline gap-2 mb-4">
-                      <span className="text-2xl md:text-3xl font-black text-emerald-600">Incluido</span>
-                      <span className="text-emerald-700 font-bold text-xs bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">¡Bonificado!</span>
-                    </div>
-                    <div className="w-full h-[1px] bg-slate-100 mb-4" />
-                    
-                    <ul className="flex flex-col gap-3 flex-grow text-xs md:text-sm">
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Motor de carrito integrado:</strong> Permite al usuario sumar múltiples productos y gestionar su propia orden sin fricción.</span></li>
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Transparencia transaccional:</strong> Precios a la vista para cualificar prospectos y reducir drásticamente las consultas.</span></li>
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Validación logística (Geofencing):</strong> Delimitación de zonas de cobertura para garantizar que solo ingresen pedidos válidos.</span></li>
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Recepción estructurada:</strong> Recibí en WhatsApp el detalle exacto de compra, dirección y liquidación total.</span></li>
-                      <li className="flex items-start gap-2.5"><CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 leading-relaxed"><strong>Automatización de ciclo:</strong> El cliente ejecuta el proceso; tu equipo solo cobra y despacha.</span></li>
-                    </ul>
-                    <div className="mt-4 pt-3 border-t border-slate-100">
-                      <p className="text-[11px] text-slate-400 leading-tight">Mantenimiento a demanda: $15.000 ARS por cada solicitud futura de actualización masiva de precios o imágenes.</p>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            )}
-
-            {/* --- FLUJOS T2 --- */}
-            {currentStep.id === 'T2_DYNAMIC' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Estructura</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">¿Cuál es la dinámica principal de tu negocio?</h2>
-                
-                <div className="flex flex-col gap-5 mt-4 text-left">
-                  <button onClick={() => handleInputChange('t2Dynamic', 'productos')} className={`w-full text-left p-6 md:p-8 rounded-[2rem] border-4 transition-all duration-300 flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-6 ${data.t2Dynamic === 'productos' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg hover:-translate-y-1'}`}>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center mt-1 ${data.t2Dynamic === 'productos' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>{data.t2Dynamic === 'productos' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                    <div>
-                      <strong className="block text-2xl font-black text-slate-800 mb-2">Catálogo de Productos</strong>
-                      <span className="text-base md:text-lg text-slate-500 leading-relaxed">Ideal para Showrooms, Deco, Indumentaria. Quiero que los clientes naveguen productos y me consulten/compren.</span>
-                    </div>
-                  </button>
-                  <button onClick={() => handleInputChange('t2Dynamic', 'servicios')} className={`w-full text-left p-6 md:p-8 rounded-[2rem] border-4 transition-all duration-300 flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-6 ${data.t2Dynamic === 'servicios' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg hover:-translate-y-1'}`}>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center mt-1 ${data.t2Dynamic === 'servicios' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>{data.t2Dynamic === 'servicios' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                    <div>
-                      <strong className="block text-2xl font-black text-slate-800 mb-2">Servicios y Turnos</strong>
-                      <span className="text-base md:text-lg text-slate-500 leading-relaxed">Ideal para Barberías, Salones, Consultorios. Quiero que vean mi portfolio y agenden un turno.</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* --- UPSELL T2 PRODUCTOS (SaaS PRICING CARDS) --- */}
-            {currentStep.id === 'T2_UPSELL_PROD' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-5xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Estructura</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-3"><ShoppingCart className="text-blue-500 w-10 h-10"/> Elegí el modo de tu catálogo</h2>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4 text-left">
-                  
-                  {/* CARD 1: BASE */}
-                  <div onClick={() => handleInputChange('t2ProductMode', 'consulta')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all duration-300 cursor-pointer ${data.t2ProductMode === 'consulta' ? 'border-blue-600 bg-blue-50/20 shadow-xl ring-4 ring-blue-600/10 scale-[1.02]' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg'}`}>
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-slate-500 font-bold tracking-widest text-xs uppercase bg-slate-100 px-3 py-1 rounded-full">Plan Base</span>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${data.t2ProductMode === 'consulta' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
-                        {data.t2ProductMode === 'consulta' && <div className="w-2 h-2 bg-white rounded-full" />}
-                      </div>
-                    </div>
-                    <h3 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">Vitrina Corporativa</h3>
-                    <div className="flex items-baseline gap-1 mb-6">
-                      <span className="text-3xl md:text-4xl font-black text-slate-900">Incluido</span>
-                    </div>
-                    <div className="w-full h-[1px] bg-slate-100 mb-6" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Presentación de portafolio:</strong> Galería estética y estructurada de tus productos (sin listado de precios).</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Derivación a WhatsApp:</strong> Canal directo para la solicitud de presupuestos y atención personalizada.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Presencia digital limpia:</strong> Estructura que fortalece la autoridad y la imagen de tu marca en internet.</span></li>
-                      <li className="flex items-start gap-3 mt-auto pt-4"><X className="w-5 h-5 text-red-400 shrink-0 mt-0.5"/><span className="text-slate-500 text-sm md:text-base leading-relaxed"><strong>Limitación técnica:</strong> No cualifica clientes mediante precios ni automatiza el flujo de compra.</span></li>
-                    </ul>
-                  </div>
-
-                  {/* CARD 2: PREMIUM (NOW FREE) */}
-                  <div onClick={() => handleInputChange('t2ProductMode', 'vitrina')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all duration-300 cursor-pointer ${data.t2ProductMode === 'vitrina' ? 'border-emerald-500 bg-emerald-50/10 shadow-2xl ring-4 ring-emerald-500/20 scale-[1.02]' : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-xl'}`}>
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-5 py-1.5 rounded-full text-xs font-black tracking-widest shadow-lg flex items-center gap-2 w-max">
-                      <Zap size={14} className="fill-white"/> MÁXIMA CONVERSIÓN
-                    </div>
-                    
-                    <div className="flex justify-between items-center mb-4 mt-2">
-                      <span className="text-emerald-700 font-bold tracking-widest text-xs uppercase bg-emerald-100 px-3 py-1 rounded-full">Módulo de Escalabilidad</span>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${data.t2ProductMode === 'vitrina' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'}`}>
-                        {data.t2ProductMode === 'vitrina' && <div className="w-2 h-2 bg-white rounded-full" />}
-                      </div>
-                    </div>
-                    <h3 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">Catálogo Interactivo</h3>
-                    <div className="flex items-baseline gap-1 mb-6">
-                      <span className="text-3xl md:text-4xl font-black text-emerald-600">Incluido</span>
-                      <span className="text-emerald-600/70 font-bold text-sm ml-2">(Bonificado)</span>
-                    </div>
-                    <div className="w-full h-[1px] bg-slate-100 mb-6" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Cualificación por precio:</strong> Listado transparente de tarifas que actúa como filtro de curiosos.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Cierre de ventas sin fricción:</strong> El usuario selecciona el producto y es derivado con intención confirmada.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Posicionamiento de autoridad:</strong> Eleva instantáneamente el valor percibido de tu marca.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Optimización de tiempo:</strong> Eliminación del desgaste por redacción de presupuestos repetitivos.</span></li>
-                    </ul>
-                    <div className="mt-6 pt-4 border-t border-slate-100">
-                      <p className="text-xs text-slate-500 leading-tight"><strong>Mantenimiento:</strong> Cada actualización (precio, imágenes, textos o servicio, máx 5 modificaciones) se cobra $15.000 ARS (aprox 10 USD). En caso de ser más, se amoldará un precio accesible según dificultad y tiempo.</p>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'T2_AGENDA' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">¿Cómo recibís los turnos?</h2>
-                <div className="flex flex-col gap-5 mt-4 text-left">
-                  <button onClick={() => handleInputChange('t2AgendaMode', 'whatsapp')} className={`w-full text-left p-6 md:p-8 rounded-[2rem] border-4 transition-all duration-300 flex flex-row items-start gap-4 md:gap-6 ${data.t2AgendaMode === 'whatsapp' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg hover:-translate-y-1'}`}>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center mt-1 ${data.t2AgendaMode === 'whatsapp' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>{data.t2AgendaMode === 'whatsapp' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                    <strong className="block text-2xl font-black text-slate-800">Directo a mi WhatsApp (Incluido)</strong>
-                  </button>
-                  <div className={`w-full text-left p-6 md:p-8 rounded-[2rem] border-4 transition-all duration-300 flex flex-col ${data.t2AgendaMode === 'link' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg hover:-translate-y-1'}`}>
-                    <button onClick={() => handleInputChange('t2AgendaMode', 'link')} className="flex flex-row items-start gap-4 md:gap-6 w-full text-left focus:outline-none">
-                      <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center mt-1 ${data.t2AgendaMode === 'link' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>{data.t2AgendaMode === 'link' && <div className="w-3 h-3 bg-white rounded-full" />}</div>
-                      <strong className="block text-2xl font-black text-slate-800">Ya uso Calendly / Booksy / etc.</strong>
-                    </button>
-                    {data.t2AgendaMode === 'link' && (
-                      <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} className="w-full mt-4 pl-[3.5rem] md:pl-[4.5rem]">
-                        <input type="text" value={data.t2AgendaLink} onChange={e=>handleInputChange('t2AgendaLink', e.target.value)} placeholder="Pegá el link de tu agenda acá..." className="w-full bg-white border-2 border-slate-200 rounded-xl p-4 text-xl outline-none focus:border-blue-500 shadow-sm" />
-                      </motion.div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* --- UPSELL T2 SERVICIOS (SaaS PRICING CARDS) --- */}
-            {currentStep.id === 'T2_UPSELL_SERV' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-5xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Estructura</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-3">¿Querés mostrar una lista de precios?</h2>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4 text-left">
-                  
-                  {/* CARD 1: BASE */}
-                  <div onClick={() => handleInputChange('t2ServicePricing', 'sin_precios')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all duration-300 cursor-pointer ${data.t2ServicePricing === 'sin_precios' ? 'border-blue-600 bg-blue-50/20 shadow-xl ring-4 ring-blue-600/10 scale-[1.02]' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg'}`}>
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-slate-500 font-bold tracking-widest text-xs uppercase bg-slate-100 px-3 py-1 rounded-full">Plan Base</span>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${data.t2ServicePricing === 'sin_precios' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
-                        {data.t2ServicePricing === 'sin_precios' && <div className="w-2 h-2 bg-white rounded-full" />}
-                      </div>
-                    </div>
-                    <h3 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">Vitrina Corporativa</h3>
-                    <div className="flex items-baseline gap-1 mb-6">
-                      <span className="text-3xl md:text-4xl font-black text-slate-900">Incluido</span>
-                    </div>
-                    <div className="w-full h-[1px] bg-slate-100 mb-6" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Presentación de portafolio:</strong> Galería estética de tus servicios profesionales (sin listado de precios).</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Derivación a WhatsApp:</strong> Canal directo para la solicitud de turnos y atención personalizada.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Presencia digital limpia:</strong> Estructura que fortalece la autoridad y la imagen de tu marca en internet.</span></li>
-                      <li className="flex items-start gap-3 mt-auto pt-4"><X className="w-5 h-5 text-red-400 shrink-0 mt-0.5"/><span className="text-slate-500 text-sm md:text-base leading-relaxed"><strong>Limitación técnica:</strong> No cualifica clientes mediante tarifas preestablecidas.</span></li>
-                    </ul>
-                  </div>
-
-                  {/* CARD 2: PREMIUM */}
-                  <div onClick={() => handleInputChange('t2ServicePricing', 'con_precios')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all duration-300 cursor-pointer ${data.t2ServicePricing === 'con_precios' ? 'border-emerald-500 bg-emerald-50/10 shadow-2xl ring-4 ring-emerald-500/20 scale-[1.02]' : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-xl'}`}>
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-5 py-1.5 rounded-full text-xs font-black tracking-widest shadow-lg flex items-center gap-2 w-max">
-                      <Star size={14} className="fill-white"/> TARIFARIO PREMIUM
-                    </div>
-                    
-                    <div className="flex justify-between items-center mb-4 mt-2">
-                      <span className="text-emerald-700 font-bold tracking-widest text-xs uppercase bg-emerald-100 px-3 py-1 rounded-full">Módulo de Escalabilidad</span>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${data.t2ServicePricing === 'con_precios' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'}`}>
-                        {data.t2ServicePricing === 'con_precios' && <div className="w-2 h-2 bg-white rounded-full" />}
-                      </div>
-                    </div>
-                    <h3 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">Catálogo Interactivo</h3>
-                    <div className="flex items-baseline gap-1 mb-6">
-                      <span className="text-3xl md:text-4xl font-black text-emerald-600">Incluido</span>
-                      <span className="text-emerald-600/70 font-bold text-sm ml-2">(Bonificado)</span>
-                    </div>
-                    <div className="w-full h-[1px] bg-slate-100 mb-6" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Cualificación por precio:</strong> Listado transparente de tarifas que actúa como filtro de contactos sin presupuesto.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Reserva sin fricción:</strong> El usuario selecciona el servicio y es derivado para agendar ya convencido.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Posicionamiento de autoridad:</strong> Un menú de servicios detallado eleva el valor de tu trabajo.</span></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"/><span className="text-slate-600 text-sm md:text-base leading-relaxed"><strong>Optimización de tiempo:</strong> Eliminación del desgaste por cotizaciones repetitivas de rutina.</span></li>
-                    </ul>
-                    <div className="mt-6 pt-4 border-t border-slate-100">
-                      <p className="text-xs text-slate-500 leading-tight"><strong>Mantenimiento:</strong> Cada actualización (precio, imágenes, textos o servicio, máx 5 modificaciones) se cobra $15.000 ARS (aprox 10 USD). En caso de ser más, se amoldará un precio accesible según dificultad y tiempo.</p>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'CATEGORIES_DEF' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Estructura</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">Armemos tu {data.templateSelected === 'T1' ? 'menú' : data.t2Dynamic === 'servicios' ? 'catálogo de trabajos' : 'catálogo'}</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-2">Agrupá tus productos/servicios en categorías para que los clientes los encuentren más fácil y naveguen cómodos.</p>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-2 text-left md:text-center">
-                  <p className="text-slate-600 text-sm md:text-base"><span className="font-bold text-blue-600">Requisito:</span> Tenés que cargar un <strong>mínimo de 3 categorías</strong> y podés tener hasta un <strong>máximo de 5</strong>. Completá todas las cajas visibles para poder avanzar.</p>
-                </div>
-                <div className="flex flex-col gap-4 text-left">
-                  {data.categories.map((cat, i) => (
-                    <div key={i} className="flex gap-4 items-center group">
-                      <div className="w-12 h-16 bg-white border-2 border-slate-100 text-slate-400 rounded-2xl flex items-center justify-center font-black text-2xl shadow-sm shrink-0">{i+1}</div>
-                      <input value={cat.name} onChange={(e) => updateCategoryName(i, e.target.value)} placeholder={data.templateSelected === 'T1' ? `Ej: ${i === 0 ? 'Hamburguesas' : 'Bebidas Sin Alcohol'}` : data.t2Dynamic === 'servicios' ? `Ej: ${i === 0 ? 'Cortes Fade' : 'Barbería Tradicional'}` : `Ej: ${i === 0 ? 'Sillones y Sofás' : 'Mesas de Comedor'}`} className="w-full text-xl md:text-2xl bg-white border-2 border-slate-200 rounded-2xl focus:border-blue-500 outline-none p-5 transition-all shadow-sm" autoFocus={i === data.categories.length - 1} />
-                      {i > 2 && <button onClick={() => removeCategory(i)} className="p-4 md:p-5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-colors shrink-0"><Trash2 size={28} /></button>}
-                    </div>
-                  ))}
-                  {data.categories.length < 5 && (
-                    <button onClick={addCategory} className="flex items-center justify-center gap-3 p-6 mt-2 border-2 border-dashed border-blue-300 text-blue-600 rounded-2xl hover:bg-blue-50 font-bold transition-colors text-lg md:text-xl">
-                      <Plus size={28} /> Añadir otra categoría
-                    </button>
-                  )}
-                  {data.templateSelected === 'T1' && (
-                    <div className="mt-4 p-5 bg-slate-100 border border-slate-200 rounded-2xl text-left">
-                      <label className="flex items-start gap-4 cursor-pointer">
-                        <input type="checkbox" checked={data.t1BulkUploadMode} onChange={(e)=>handleInputChange('t1BulkUploadMode', e.target.checked)} className="w-6 h-6 mt-1 rounded text-blue-600 focus:ring-blue-500 shrink-0"/>
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 text-lg md:text-xl">Prefiero subir mis productos en un archivo Excel/PDF</span>
-                          <span className="text-slate-500 text-sm md:text-base">Marcá esta opción si ya tenés un menú armado y no querés cargar las fotos una por una en la siguiente pantalla.</span>
-                        </div>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'T1_BULK_UPLOAD' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-2xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Carga Masiva</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2">Subida de Archivos</h2>
-                <p className="text-lg md:text-xl text-slate-600 mb-4">Subí un PDF, Excel o Word con tus productos (Máximo 6 categorías, 6 productos c/u). <br/>{data.t1MenuMode === 'abierto' && <strong className="text-blue-600">Al elegir el Modo Abierto, no hace falta que tenga precios.</strong>}</p>
-                
-                <label className="cursor-pointer flex flex-col items-center justify-center bg-white hover:bg-blue-50 border-4 border-dashed border-blue-200 rounded-[2rem] p-10 transition-colors w-full shadow-sm">
-                  <UploadCloud className="w-16 h-16 text-blue-400 mb-4" />
-                  <span className="text-xl md:text-2xl font-black text-slate-700 mb-2">Hacé clic para seleccionar tu archivo</span>
-                  <span className="text-base text-slate-500 mb-6">Soporta PDF, Excel (.xlsx), CSV o Word</span>
-                  <input type="file" className="hidden" accept=".pdf,.xls,.xlsx,.csv,.doc,.docx" onChange={(e) => {
-                     if(e.target.files && e.target.files[0]) {
-                         handleInputChange('t1BulkFileUrl', e.target.files[0].name);
-                     }
-                  }} />
-                  <div className="px-6 py-3 bg-blue-600 text-white font-bold rounded-full text-lg shadow-lg hover:bg-blue-700">Explorar archivos</div>
-                </label>
-                
-                {data.t1BulkFileUrl && (
-                  <motion.div initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} className="mt-4 p-5 bg-green-50 border-2 border-green-200 text-green-700 font-bold rounded-2xl flex items-center justify-center gap-3 text-lg md:text-xl shadow-sm">
-                    <ShieldCheck size={28}/> Archivo cargado: {data.t1BulkFileUrl}
-                  </motion.div>
-                )}
-              </div>
-            )}
-
-            {currentStep.id === 'T1_BULK_FEATURED' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-2xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Exhibición</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2 flex items-center justify-center gap-3"><Star className="text-yellow-400 fill-yellow-400 w-10 h-10"/> Tus Destacados</h2>
-                <p className="text-lg md:text-xl text-slate-600 mb-4">Como subiste tu menú en un archivo, necesitamos que nos escribas los nombres de **los 6 productos principales** que querés mostrar en la galería destacada de la portada.</p>
-                
-                <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col gap-4 text-left">
-                  {[0,1,2,3,4,5].map((i) => (
-                    <div key={i} className="flex gap-4 items-center">
-                      <div className="w-10 h-10 shrink-0 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center font-black">{i+1}</div>
-                      <input value={data.t1BulkFeatured[i]} onChange={(e) => updateBulkFeatured(i, e.target.value)} placeholder={`Ej: Hamburguesa Doble Cheddar`} className="w-full text-lg bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-yellow-400 outline-none p-4 transition-all" autoFocus={i===0} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStep.id?.startsWith('CAT_UPLOAD_') && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-6xl mx-auto px-2 md:px-0 py-4">
-                <div className="flex flex-col text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Carga de Productos/Servicios</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2">
-                    <span className="text-blue-600">{data.categories[currentStep.catIndex!].name}</span>
+            {/* ============================================================ */}
+            {/* STEP 1: ACCOUNT SYNC */}
+            {/* ============================================================ */}
+            {currentStep.id === 'ACCOUNT_SYNC' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 01 · Identidad
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    ¿Cuál es tu usuario de Mercado Libre o email?
                   </h2>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4 max-w-2xl mx-auto text-left md:text-center">
-                  <p className="text-slate-600 text-sm md:text-base">💡 Subí fotos de esta categoría. <strong className="text-blue-600">Es obligatorio subir por lo menos 1 foto</strong> para pasar al siguiente paso. Si no querés subir los 6, dejá las demás cajas vacías y se ocultarán automáticamente.</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 items-start">
-                  {data.categories[currentStep.catIndex!].items.map((item, itemIdx) => (
-                    <div key={item.id} className="bg-white border-2 border-slate-100 rounded-[2rem] p-5 md:p-6 shadow-sm hover:shadow-xl hover:border-blue-300 transition-all flex flex-col gap-5 h-fit">
-                      {!item.image ? (
-                        <ImageUpload userId={data.mercadoLibreUser} label={`Foto ${itemIdx + 1}`} value="" onChange={(url) => updateProduct(currentStep.catIndex!, itemIdx, 'image', url)} />
-                      ) : (
-                        <>
-                          <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-slate-50 group flex items-center justify-center p-2 border border-slate-100">
-                            <img src={item.image} alt="Preview" className="w-full h-full object-contain" />
-                            <div className="absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
-                              <button onClick={() => updateProduct(currentStep.catIndex!, itemIdx, 'image', '')} className="bg-white text-red-500 p-4 rounded-full hover:scale-110 shadow-xl transition-transform"><Trash2 size={24}/></button>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-3">
-                            <input placeholder="Nombre..." value={item.name} onChange={(e) => updateProduct(currentStep.catIndex!, itemIdx, 'name', e.target.value)} className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl outline-none p-4 font-bold text-slate-800 text-lg transition-colors" />
-                            <textarea placeholder="Breve descripción (Opcional)..." value={item.description} onChange={(e) => updateProduct(currentStep.catIndex!, itemIdx, 'description', e.target.value)} className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl outline-none p-4 text-slate-600 transition-colors resize-none h-24 text-sm md:text-base" />
-                            
-                            {(data.t1MenuMode === 'ecommerce' || data.t2ProductMode === 'vitrina' || data.t2ServicePricing === 'con_precios') && (
-                              <div className="flex items-center gap-3 mt-1">
-                                <span className="font-black text-slate-400 text-2xl">$</span>
-                                <input placeholder="Precio (Ej: 15000)" value={item.price} onChange={(e) => updateProduct(currentStep.catIndex!, itemIdx, 'price', e.target.value)} className="w-full bg-green-50 border-2 border-green-200 focus:border-green-500 rounded-xl p-4 font-black text-green-700 outline-none text-xl transition-colors" />
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* --- SECCIÓN DE LOGÍSTICA PARA TEMPLATE 1 --- */}
-            {currentStep.id === 'T1_LOGISTICS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Logística y Envíos</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">¿Qué métodos de entrega ofrecés?</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-2">Definí cómo vas a entregar los pedidos a tus clientes.</p>
-                
-                <div className="flex flex-col gap-4 mt-2 text-left">
-                  <button onClick={() => handleInputChange('t1DeliveryMethod', 'takeaway')} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all duration-300 flex items-center gap-4 md:gap-6 ${data.t1DeliveryMethod === 'takeaway' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg'}`}>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center transition-colors ${data.t1DeliveryMethod === 'takeaway' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>
-                      {data.t1DeliveryMethod === 'takeaway' && <div className="w-3 h-3 bg-white rounded-full" />}
-                    </div>
-                    <strong className="block text-xl md:text-2xl font-black text-slate-800">Solo Retiro en Local (Takeaway)</strong>
-                  </button>
-                  
-                  <button onClick={() => handleInputChange('t1DeliveryMethod', 'delivery')} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all duration-300 flex items-center gap-4 md:gap-6 ${data.t1DeliveryMethod === 'delivery' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg'}`}>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center transition-colors ${data.t1DeliveryMethod === 'delivery' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>
-                      {data.t1DeliveryMethod === 'delivery' && <div className="w-3 h-3 bg-white rounded-full" />}
-                    </div>
-                    <strong className="block text-xl md:text-2xl font-black text-slate-800">Solo Envío a Domicilio (Delivery)</strong>
-                  </button>
-
-                  <button onClick={() => handleInputChange('t1DeliveryMethod', 'ambos')} className={`w-full text-left p-6 rounded-[2rem] border-4 transition-all duration-300 flex items-center gap-4 md:gap-6 ${data.t1DeliveryMethod === 'ambos' ? 'border-blue-500 bg-blue-50/30 shadow-xl md:-translate-y-2' : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg'}`}>
-                    <div className={`w-8 h-8 rounded-full border-[3px] flex shrink-0 items-center justify-center transition-colors ${data.t1DeliveryMethod === 'ambos' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>
-                      {data.t1DeliveryMethod === 'ambos' && <div className="w-3 h-3 bg-white rounded-full" />}
-                    </div>
-                    <strong className="block text-xl md:text-2xl font-black text-slate-800">Ambas opciones (Retiro y Delivery)</strong>
-                  </button>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Lo necesitamos para asociar esta configuración a tu compra de forma inmediata y segura.
+                  </p>
                 </div>
 
-                {/* SI TIENE DELIVERY, PREGUNTAMOS LAS ZONAS */}
-                {(data.t1DeliveryMethod === 'delivery' || data.t1DeliveryMethod === 'ambos') && (
-                  <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} className="mt-4 text-left">
-                    <div className="flex items-start gap-4 bg-blue-50 p-5 rounded-2xl border border-blue-100 mb-4 shadow-sm">
-                      <Info className="text-blue-500 shrink-0 mt-0.5" size={24} />
-                      <div className="flex flex-col gap-1">
-                        <p className="font-bold text-blue-900 text-base md:text-lg">Zonas de Envío</p>
-                        <p className="text-blue-800 text-sm md:text-base leading-relaxed">Para garantizar que el sistema valide correctamente las direcciones de tus clientes, escribí los barrios o localidades exactas a las que llega tu delivery, <strong>ESTRICTAMENTE SEPARADAS POR COMA</strong> (Ejemplo: Ramos Mejía, San Justo, Villa Luzuriaga). Solo los clientes que seleccionen estas zonas podrán hacer un pedido con envío.</p>
-                      </div>
-                    </div>
-                    <textarea 
-                      value={data.t1DeliveryZones} 
-                      onChange={e => handleInputChange('t1DeliveryZones', e.target.value)} 
-                      placeholder="Ej: Palermo, Recoleta, Belgrano, Colegiales" 
-                      className="w-full text-lg md:text-xl bg-white border-2 border-slate-200 rounded-[2rem] focus:border-blue-500 outline-none p-6 resize-none h-32 transition-all shadow-sm" 
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Identificador de Compra *
+                    </label>
+                    <input
+                      type="text"
+                      value={data.mercadoLibreUser}
+                      onChange={(e) => handleInputChange('mercadoLibreUser', e.target.value)}
+                      placeholder="Ej: JUANPEREZ_VENTAS o contacto@empresa.com"
+                      className="w-full h-14 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-2xl px-5 text-base font-bold text-slate-900 placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      autoFocus
                     />
-                  </motion.div>
-                )}
+                  </div>
+
+                  <AgencyCopyTip message="Podés ingresar tu usuario de Mercado Libre o el correo con el que efectuaste el pago." />
+                </div>
               </div>
             )}
 
-            {currentStep.id === 'SERVICES_DEF' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-6xl mx-auto w-full px-2 md:px-0 py-4">
-                <div className="flex flex-col text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Tus Soluciones</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 text-center mb-2">Detallá tus servicios</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mb-2 max-w-2xl mx-auto">Explicá brevemente en qué consiste cada uno de tus servicios para que el cliente sepa qué está contratando.</p>
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4 max-w-2xl mx-auto text-left md:text-center">
-                    <p className="text-slate-600 text-sm md:text-base">⚠️ <strong className="text-blue-600 font-bold">Por el diseño de la plantilla que compraste, es obligatorio rellenar los 6 servicios para poder continuar.</strong></p>
-                  </div>
+            {/* ============================================================ */}
+            {/* STEP 2: COMPANY NAME & SLOGAN */}
+            {/* ============================================================ */}
+            {currentStep.id === 'COMPANY_NAME' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 02 · Identidad
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    ¿Cómo se llama tu empresa o firma comercial?
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Aparecerá en el encabezado oficial, pie de página y metadatos de posicionamiento en Google.
+                  </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 bg-white rounded-[2rem] shadow-sm border border-slate-100 p-4 md:p-6">
-                  {data.services.map((svc, i) => (
-                    <div key={svc.id} className="bg-slate-50 p-5 md:p-6 rounded-3xl border-2 border-slate-200 focus-within:border-blue-500 focus-within:bg-white transition-all flex flex-col gap-4">
-                      <div className="flex items-center gap-4"><div className="w-12 h-12 shrink-0 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-black text-xl">{i+1}</div><input value={svc.title} onChange={e=>updateService(i,'title',e.target.value)} placeholder="Título del servicio..." className="w-full text-2xl font-bold bg-transparent outline-none border-b-2 border-transparent focus:border-blue-200" /></div>
-                      <textarea value={svc.description} onChange={e=>updateService(i,'description',e.target.value)} placeholder="Breve descripción de lo que incluye..." className="w-full text-lg text-slate-600 bg-white rounded-2xl p-4 outline-none resize-none h-28 border border-slate-200 focus:border-blue-300" />
-                      <input value={svc.iconHint} onChange={e=>updateService(i,'iconHint',e.target.value)} placeholder="Idea para el ícono (Opcional - Ej: 'Una llave inglesa')" className="w-full text-sm md:text-base font-medium text-blue-500 bg-transparent outline-none border-b border-dashed border-blue-200 pb-1 mt-1" />
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Nombre Comercial / Razón Social *
+                    </label>
+                    <input
+                      type="text"
+                      value={data.companyName}
+                      onChange={(e) => handleInputChange('companyName', e.target.value)}
+                      placeholder="Ej: Nexus Consultora S.A."
+                      className="w-full h-14 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-2xl px-5 text-base font-bold text-slate-900 placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Eslogan Institucional o Propósito (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={data.slogan}
+                      onChange={(e) => handleInputChange('slogan', e.target.value)}
+                      placeholder="Ej: Soluciones estratégicas para el crecimiento corporativo"
+                      className="w-full h-14 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-2xl px-5 text-base font-medium text-slate-900 placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <AgencyCopyTip message="Si no sabés con exactitud qué eslogan poner, dejá una idea simple de lo que buscás transmitir. Nuestro equipo redactará una versión atractiva que podrás validar en la previsualización." />
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================ */}
+            {/* STEP 3: BRAND LOGO */}
+            {/* ============================================================ */}
+            {currentStep.id === 'BRAND_LOGO' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 03 · Identidad
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Subí el logotipo oficial de tu marca
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Soporta imágenes en PNG, JPG o vector. Nuestro equipo limpiará los fondos si es necesario.
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  {!data.noLogo && (
+                    <ImageUpload
+                      clientFolder={getClientFolderName()}
+                      imageType="logotipo"
+                      value={data.logoUrl}
+                      onChange={(url) => handleInputChange('logoUrl', url)}
+                    />
+                  )}
+
+                  <label className="flex items-center gap-3.5 p-4 bg-slate-50/80 border border-slate-200 hover:border-slate-300 rounded-2xl cursor-pointer hover:bg-slate-100/60 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={data.noLogo}
+                      onChange={(e) => {
+                        handleInputChange('noLogo', e.target.checked);
+                        if (e.target.checked) handleInputChange('logoUrl', '');
+                      }}
+                      className="w-4 h-4 rounded text-slate-900 border-slate-300 focus:ring-0 cursor-pointer shrink-0"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900 text-sm">No tenemos logotipo oficial todavía</span>
+                      <span className="text-xs text-slate-500">Diseñaremos una marca tipográfica sobria y minimalista sin costo adicional.</span>
                     </div>
-                  ))}
+                  </label>
                 </div>
               </div>
             )}
 
-            {/* --- SECCIÓN DE FAQS PARA T3 --- */}
-            {currentStep.id === 'T3_FAQS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-4xl mx-auto w-full px-2 md:px-0 py-4">
-                <div className="flex flex-col text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Información Clave</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2 flex items-center justify-center gap-3"><HelpCircle className="text-blue-500 w-10 h-10"/> Preguntas Frecuentes</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mb-2 max-w-2xl mx-auto">Adelantate a las dudas de tus clientes. Agregá hasta 5 preguntas típicas que te hacen siempre.</p>
-                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4 max-w-2xl mx-auto text-left md:text-center">
-                    <p className="text-blue-800 text-sm md:text-base">💡 <strong className="font-bold">No te preocupes por la redacción perfecta.</strong> Escribilo como te salga, nuestro equipo lo va a adaptar para que suene profesional y ayude a convencer a tus clientes. <strong>(Mínimo 1 obligatoria)</strong>.</p>
+            {/* ============================================================ */}
+            {/* STEP 4: BRAND STYLE (ESTUDIO INTERACTIVO DINÁMICO POR SUB-PASOS) */}
+            {/* ============================================================ */}
+            {currentStep.id === 'BRAND_STYLE' && (() => {
+              const primaryColorCss = parseColorToCss(data.primaryColor, '#0F172A');
+              const secondaryColorCss = parseColorToCss(data.secondaryColor, '#334155');
+
+              return (
+              <div className="flex flex-col gap-5 py-2">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 04 · Identidad
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Estilo visual: Colores, Tipografía y Tono
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Visualizá cómo toma vida tu sitio en tiempo real a medida que seleccionás cada atributo.
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-4 sm:p-7 shadow-sm flex flex-col gap-5 sm:gap-6">
+                  
+                  {/* PANTALLA INTERACTIVA FIJA EN LA PARTE SUPERIOR */}
+                  <div className="rounded-2xl p-3 sm:p-4 border border-slate-200/90 bg-slate-100/70 shadow-xs flex flex-col gap-2.5">
+                    {/* Barra superior de navegador de maqueta */}
+                    <div className="flex items-center justify-between px-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
+                        <span className="text-[11px]  font-medium text-slate-400 ml-2 hidden sm:inline">
+                          https://tu-empresa.agweb.design
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-bold text-[10px] sm:text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Maqueta en Tiempo Real
+                      </span>
+                    </div>
+
+                    {/* Contenedor del sitio simulado */}
+                    <div 
+                      className="p-4 sm:p-5 rounded-xl border transition-all duration-300 flex flex-col gap-3.5 shadow-2xs"
+                      style={{
+                        backgroundColor: data.backgroundTone.includes('Oscuros') ? '#0B1120' : data.backgroundTone.includes('criterio') ? '#F8FAFC' : '#FFFFFF',
+                        color: data.backgroundTone.includes('Oscuros') ? '#F8FAFC' : '#0F172A',
+                        borderColor: secondaryColorCss,
+                        fontFamily: data.typography === 'Serif' 
+                          ? "'Playfair Display', Georgia, serif" 
+                          : data.typography === 'Otra' && data.customTypography.trim() 
+                          ? data.customTypography 
+                          : "'Outfit', 'Plus Jakarta Sans', sans-serif"
+                      }}
+                    >
+                      <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: data.backgroundTone.includes('Oscuros') ? '#1E293B' : '#F1F5F9' }}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs text-white shadow-xs transition-colors"
+                            style={{ backgroundColor: primaryColorCss }}
+                          >
+                            {data.companyName ? data.companyName.charAt(0).toUpperCase() : 'A'}
+                          </div>
+                          <span className="font-extrabold text-xs sm:text-sm tracking-tight">
+                            {data.companyName || 'Tu Firma Corporativa'}
+                          </span>
+                        </div>
+                        <span className="text-[11px] opacity-60 hidden sm:inline">Inicio · Soluciones · Nosotros · Contacto</span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 py-0.5">
+                        <span 
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded w-fit transition-colors"
+                          style={{
+                            backgroundColor: `${primaryColorCss}20`,
+                            color: primaryColorCss
+                          }}
+                        >
+                          Calidad de Agencia Digital
+                        </span>
+                        <h4 className="text-base sm:text-lg font-black leading-snug tracking-tight">
+                          Lideramos el crecimiento de tu organización
+                        </h4>
+                        <div className="pt-1.5 flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            className="px-4 py-1.5 rounded-lg text-xs font-bold text-white shadow-2xs transition-all"
+                            style={{ backgroundColor: primaryColorCss }}
+                          >
+                            Botón Principal
+                          </button>
+                          <button
+                            type="button"
+                            className="px-4 py-1.5 rounded-lg text-xs font-bold border transition-all"
+                            style={{ 
+                              borderColor: secondaryColorCss,
+                              color: data.backgroundTone.includes('Oscuros') ? '#E2E8F0' : secondaryColorCss
+                            }}
+                          >
+                            Secundario
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SELECTOR DE SUB-PASO (TABS DINÁMICOS) */}
+                  <div className="flex items-center p-1 bg-slate-100 rounded-xl w-full">
+                    <button
+                      type="button"
+                      onClick={() => setBrandSubStep(0)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                        brandSubStep === 0
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      1. Colores
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBrandSubStep(1)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                        brandSubStep === 1
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      2. Tipografía
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBrandSubStep(2)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                        brandSubStep === 2
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      3. Tono Visual
+                    </button>
+                  </div>
+
+                  {/* PARTE DE ABAJO QUE CAMBIA SEGÚN EL SUB-PASO */}
+                  <AnimatePresence mode="wait">
+                    {/* SUB-PASO 0: COLORES */}
+                    {brandSubStep === 0 && (
+                      <motion.div
+                        key="substep-colors"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex flex-col gap-4"
+                      >
+                        <div className="flex flex-col gap-2">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                            Paletas sugeridas de 1 clic:
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {[
+                              { name: 'Onyx & Acero', primary: '#0F172A', secondary: '#475569' },
+                              { name: 'Azul Corporativo', primary: '#1E3A8A', secondary: '#64748B' },
+                              { name: 'Esmeralda & Gris', primary: '#064E3B', secondary: '#334155' },
+                              { name: 'Vino & Carbón', primary: '#4A044E', secondary: '#1E293B' },
+                              { name: 'Azul Marino & Dorado', primary: '#0A192F', secondary: '#D4AF37' },
+                              { name: 'Petróleo & Titanio', primary: '#0F766E', secondary: '#475569' }
+                            ].map((preset) => (
+                              <button
+                                key={preset.name}
+                                type="button"
+                                onClick={() => {
+                                  handleInputChange('primaryColor', preset.primary);
+                                  handleInputChange('secondaryColor', preset.secondary);
+                                }}
+                                className="p-2.5 rounded-xl border border-slate-200/90 hover:border-slate-900 text-left transition-all flex flex-col gap-1.5 cursor-pointer hover:bg-slate-50 active:scale-[0.98]"
+                              >
+                                <div className="flex gap-1.5 items-center">
+                                  <span className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-2xs" style={{ backgroundColor: preset.primary }} />
+                                  <span className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-2xs" style={{ backgroundColor: preset.secondary }} />
+                                </div>
+                                <span className="text-xs font-bold text-slate-800 leading-tight">{preset.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                              <span>Color Principal (Botones y Acentos) *</span>
+                              <span 
+                                className="w-4 h-4 rounded-full border border-slate-300 shadow-2xs shrink-0 transition-colors" 
+                                style={{ backgroundColor: primaryColorCss }} 
+                                title={`Muestra visual: ${primaryColorCss}`}
+                              />
+                            </label>
+                            <input
+                              type="text"
+                              value={data.primaryColor}
+                              onChange={(e) => handleInputChange('primaryColor', e.target.value)}
+                              placeholder="Ej: Azul Marino o #0F172A"
+                              className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none transition-all shadow-2xs"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                              <span>Color Secundario (Bordes y Fondos) *</span>
+                              <span 
+                                className="w-4 h-4 rounded-full border border-slate-300 shadow-2xs shrink-0 transition-colors" 
+                                style={{ backgroundColor: secondaryColorCss }} 
+                                title={`Muestra visual: ${secondaryColorCss}`}
+                              />
+                            </label>
+                            <input
+                              type="text"
+                              value={data.secondaryColor}
+                              onChange={(e) => handleInputChange('secondaryColor', e.target.value)}
+                              placeholder="Ej: Gris Grafito o #334155"
+                              className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none transition-all shadow-2xs"
+                            />
+                          </div>
+                        </div>
+
+                        <AgencyCopyTip message="Podés escribir palabras como 'Azul oscuro', 'Verde esmeralda', 'Dorado', o un código HEX. La maqueta arriba se adaptará en tiempo real." />
+                      </motion.div>
+                    )}
+
+                    {/* SUB-PASO 1: TIPOGRAFÍA */}
+                    {brandSubStep === 1 && (
+                      <motion.div
+                        key="substep-typography"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex flex-col gap-3.5"
+                      >
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                          Elegí la tipografía de tu plataforma:
+                        </span>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          {[
+                            { id: 'Sans Serif', title: 'Moderna & Clean', desc: 'Sans-Serif (Inter/Outfit), clara y tecnológica' },
+                            { id: 'Serif', title: 'Editorial & Clásica', desc: 'Serif prestigiosa, tradicional y formal' },
+                            { id: 'Otra', title: 'Google Font a Medida', desc: 'Fuente específica a tu elección' }
+                          ].map((typo) => (
+                            <button
+                              key={typo.id}
+                              type="button"
+                              onClick={() => handleInputChange('typography', typo.id as any)}
+                              className={`p-4 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer flex flex-col justify-between h-24 ${
+                                data.typography === typo.id
+                                  ? 'border-slate-900 bg-slate-900/[0.04] ring-1 ring-slate-900 shadow-2xs'
+                                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span className="font-extrabold text-slate-900 text-sm ">{typo.title}</span>
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${data.typography === typo.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300'}`}>
+                                  {data.typography === typo.id && <Check size={11} />}
+                                </div>
+                              </div>
+                              <span className="text-xs text-slate-500 leading-snug">{typo.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        {data.typography === 'Otra' && (
+                          <input
+                            type="text"
+                            value={data.customTypography}
+                            onChange={(e) => handleInputChange('customTypography', e.target.value)}
+                            placeholder="Escribí el nombre de la tipografía (Ej: Montserrat, Poppins, Outfit)"
+                            className="w-full h-13 bg-slate-50/70 border border-slate-200 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none transition-all shadow-2xs mt-1"
+                            autoFocus
+                          />
+                        )}
+
+                        <AgencyCopyTip message="Al hacer clic, la tipografía cambia instantáneamente en la maqueta interactiva arriba." />
+                      </motion.div>
+                    )}
+
+                    {/* SUB-PASO 2: TONO VISUAL */}
+                    {brandSubStep === 2 && (
+                      <motion.div
+                        key="substep-tone"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex flex-col gap-3.5"
+                      >
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                          Elegí la atmósfera de fondo del sitio:
+                        </span>
+
+                        <div className="grid grid-cols-1 gap-2.5">
+                          {[
+                            { val: 'Tonos Claros (Luminoso, limpio y clásico)', desc: 'Fondo blanco/marfil, máxima legibilidad y estética diáfana.' },
+                            { val: 'Tonos Oscuros (Elegante, premium y moderno)', desc: 'Fondo grafito/carbón, atmósfera contemporánea y prestigiosa.' },
+                            { val: 'A criterio del diseñador (Confío en ustedes)', desc: 'Nuestro equipo seleccionará el tono óptimo según tu rubro y logotipo.' }
+                          ].map((tone) => (
+                            <button
+                              key={tone.val}
+                              type="button"
+                              onClick={() => handleInputChange('backgroundTone', tone.val as any)}
+                              className={`p-3.5 sm:p-4 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer flex items-center justify-between ${
+                                data.backgroundTone === tone.val
+                                  ? 'border-slate-900 bg-slate-900/[0.04] ring-1 ring-slate-900 shadow-2xs'
+                                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                              }`}
+                            >
+                              <div className="flex flex-col pr-2">
+                                <span className="font-extrabold text-slate-900 text-sm ">{tone.val.split(' (')[0]}</span>
+                                <span className="text-xs text-slate-500 mt-0.5 leading-snug">{tone.desc}</span>
+                              </div>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${data.backgroundTone === tone.val ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300'}`}>
+                                {data.backgroundTone === tone.val && <Check size={11} />}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+
+                        <AgencyCopyTip message="Podés ver cómo cambia el contraste de fondo en la maqueta interactiva arriba." />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* ============================================================ */}
+            {/* STEP 5: HERO SECTION */}
+            {/* ============================================================ */}
+            {currentStep.id === 'HERO_SECTION' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 05 · Identidad
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    La portada: primer impacto visual
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Un titular contundente y una fotografía de alta calidad que sintetice tu propuesta de valor.
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Frase o Titular Principal de Portada *
+                    </label>
+                    <textarea
+                      value={data.heroTitle}
+                      onChange={(e) => handleInputChange('heroTitle', e.target.value)}
+                      placeholder="Ej: Impulsamos el crecimiento y la competitividad de las empresas líderes a través de soluciones estratégicas de clase mundial."
+                      className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-2xl p-4 text-sm sm:text-base font-medium text-slate-900 placeholder:text-slate-400 outline-none transition-all min-h-[100px] resize-none leading-relaxed shadow-2xs"
+                    />
+                  </div>
+
+                  <AgencyCopyTip message="Si no sabés qué titular poner, poné algo sencillo o la idea principal de lo que buscás transmitir con tu negocio. Nuestro equipo redactará un titular atractivo para la web y en la previsualización podrás corregirlo si no te gusta." />
+
+                  <div className="flex flex-col gap-2 pt-1">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Fotografía de Portada Desktop (Horizontal) *
+                    </label>
+                    <ImageUpload
+                      clientFolder={getClientFolderName()}
+                      imageType="portada_desktop"
+                      value={data.heroImage}
+                      onChange={(url) => handleInputChange('heroImage', url)}
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-3.5 p-4 bg-slate-50/80 border border-slate-200 hover:border-slate-300 rounded-2xl cursor-pointer hover:bg-slate-100/60 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={data.wantsMobileHero}
+                      onChange={(e) => handleInputChange('wantsMobileHero', e.target.checked)}
+                      className="w-4 h-4 rounded text-slate-900 border-slate-300 focus:ring-0 cursor-pointer shrink-0"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900 text-sm">Subir foto vertical optimizada para celulares</span>
+                      <span className="text-xs text-slate-500">Opcional. Si no, adaptaremos la horizontal automáticamente para móviles.</span>
+                    </div>
+                  </label>
+
+                  {data.wantsMobileHero && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                        Foto Celular Vertical (9:16)
+                      </label>
+                      <ImageUpload
+                        clientFolder={getClientFolderName()}
+                        imageType="portada_mobile"
+                        value={data.heroImageMobile}
+                        onChange={(url) => handleInputChange('heroImageMobile', url)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================ */}
+            {/* STEP 6: ABOUT COMPANY */}
+            {/* ============================================================ */}
+            {currentStep.id === 'ABOUT_COMPANY' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 06 · Empresa
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Contanos sobre la trayectoria e historia de la firma
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    A los clientes corporativos les interesa conocer quiénes están detrás y qué experiencia los respalda.
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Historia y Presentación Institucional *
+                    </label>
+                    <textarea
+                      value={data.aboutText}
+                      onChange={(e) => handleInputChange('aboutText', e.target.value)}
+                      placeholder="Ej: Fundada en 2012, somos una firma integral especializada en consultoría estratégica y servicios corporativos..."
+                      className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-2xl p-4 sm:p-5 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all min-h-[140px] resize-none leading-relaxed shadow-2xs"
+                    />
+                  </div>
+
+                  <AgencyCopyTip message="Contanos en pocas líneas cómo nació tu empresa o a qué se dedican. Nuestro equipo se encargará de redactar una historia institucional atractiva y en la previsualización podrás corregir cualquier detalle." />
+
+                  <div className="flex flex-col gap-2 pt-1">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Fotografía del Equipo o Instalaciones *
+                    </label>
+                    <ImageUpload
+                      clientFolder={getClientFolderName()}
+                      imageType="equipo_instalaciones"
+                      value={data.aboutImage}
+                      onChange={(url) => handleInputChange('aboutImage', url)}
+                    />
                   </div>
                 </div>
-                
-                <div className="flex flex-col gap-4 text-left">
-                  {data.t3Faqs.map((faq, i) => (
-                    <div key={i} className="flex gap-4 items-start group bg-white p-5 md:p-6 rounded-[2rem] border-2 border-slate-100 shadow-sm transition-all focus-within:border-blue-500 focus-within:shadow-md">
-                      <div className="w-10 h-10 md:w-12 md:h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center font-black text-xl shrink-0 border border-slate-200">{i+1}</div>
-                      <div className="flex flex-col gap-3 w-full">
-                        <input 
-                          value={faq.question} 
-                          onChange={(e) => updateFaq(i, 'question', e.target.value)} 
-                          placeholder="Ej: ¿Cuáles son sus honorarios o cómo presupuestan?" 
-                          className="w-full text-lg md:text-xl font-bold text-slate-800 bg-transparent outline-none border-b border-slate-200 focus:border-blue-500 pb-2 transition-colors" 
-                        />
-                        <textarea 
-                          value={faq.answer} 
-                          onChange={(e) => updateFaq(i, 'answer', e.target.value)} 
-                          placeholder="Ej: Cobramos un abono mensual que depende de los movimientos, pero..." 
-                          className="w-full text-base md:text-lg text-slate-600 bg-slate-50 rounded-xl outline-none p-4 resize-none h-24 border border-transparent focus:border-blue-300 focus:bg-white transition-colors" 
+              </div>
+            )}
+
+            {/* ============================================================ */}
+            {/* STEP 7: VALUE PROPOSITION & STATS */}
+            {/* ============================================================ */}
+            {currentStep.id === 'VALUE_PROPOSITION' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 07 · Empresa
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Diferenciales: ¿Por qué elegirnos?
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Explicá las principales ventajas competitivas y motivos que distinguen a tu firma en el mercado.
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                      Propuesta de Valor & Razones para Elegirnos *
+                    </label>
+                    <textarea
+                      value={data.strengths}
+                      onChange={(e) => handleInputChange('strengths', e.target.value)}
+                      placeholder="Ej: Contamos con profesionales certificados con más de una década de experiencia comprobada, atención personalizada 24/7 y confidencialidad estricta..."
+                      className="w-full bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-2xl p-4 sm:p-5 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 outline-none transition-all min-h-[140px] resize-none leading-relaxed shadow-2xs"
+                    />
+                  </div>
+
+                  <AgencyCopyTip message="Explicá con tus palabras qué te destaca frente a la competencia (atención rápida, experiencia, compromiso). Nosotros lo convertiremos en una propuesta de valor atractiva para la web." />
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================ */}
+            {/* STEP 8: SERVICES PORTFOLIO */}
+            {/* ============================================================ */}
+            {currentStep.id === 'SERVICES_PORTFOLIO' && (() => {
+              const completedCount = data.services.filter(s => s.title.trim() !== '' && s.description.trim() !== '').length;
+
+              return (
+              <div className="flex flex-col gap-5 sm:gap-6 py-2">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 08 · Soluciones
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Cartera de 6 servicios corporativos
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Estructurá las 6 soluciones de tu empresa (los 6 campos son obligatorios para tu plataforma).
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-4 sm:p-7 shadow-sm flex flex-col gap-5">
+                  {/* CONTADOR DE PROGRESO */}
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                        6 Servicios Requeridos
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        Obligatorios
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-20 sm:w-28 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
+                          style={{ width: `${(completedCount / 6) * 100}%` }}
                         />
                       </div>
-                      {data.t3Faqs.length > 1 && (
-                        <button onClick={() => removeFaq(i)} className="p-2 md:p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors shrink-0 mt-1"><Trash2 size={24} /></button>
-                      )}
+                      <span className="text-xs sm:text-sm font-extrabold text-slate-900 ">
+                        {completedCount} de 6 completados
+                      </span>
+                    </div>
+                  </div>
+
+                  <AgencyCopyTip message="Escribí el nombre y una breve idea de cada servicio. Nuestro equipo le dará redacción profesional y atractiva para la web, y en la previsualización podrás validar o corregir todo." />
+
+                  {/* LISTADO DE 6 TARJETAS DE SERVICIOS */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {data.services.map((svc, idx) => {
+                      const isComplete = svc.title.trim() !== '' && svc.description.trim() !== '';
+
+                      return (
+                        <div
+                          key={svc.id}
+                          className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 border border-slate-200/90 hover:border-slate-300 focus-within:border-slate-900 focus-within:bg-white transition-all flex flex-col gap-3 shadow-2xs"
+                        >
+                          {/* CABECERA DE LA TARJETA */}
+                          <div className="flex items-center justify-between border-b border-slate-200/60 pb-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-6 h-6 rounded-lg bg-slate-900 text-white  text-xs font-bold flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <span className="text-xs sm:text-sm font-extrabold text-slate-900 ">
+                                Servicio {idx + 1}
+                              </span>
+                            </div>
+
+                            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                              isComplete 
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                : 'bg-slate-200 text-slate-500'
+                            }`}>
+                              {isComplete ? (
+                                <>
+                                  <Check size={11} className="text-emerald-700" />
+                                  <span>Completo</span>
+                                </>
+                              ) : (
+                                <span>Pendiente</span>
+                              )}
+                            </span>
+                          </div>
+
+                          {/* NOMBRE DEL SERVICIO */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                              Nombre del Servicio *
+                            </label>
+                            <input
+                              type="text"
+                              value={svc.title}
+                              onChange={(e) => updateService(idx, 'title', e.target.value)}
+                              placeholder={
+                                idx === 0 ? 'Ej: Consultoría Estratégica' :
+                                idx === 1 ? 'Ej: Asesoramiento Tributario y Legal' :
+                                idx === 2 ? 'Ej: Auditoría y Compliance' :
+                                idx === 3 ? 'Ej: Transformación Digital & IT' :
+                                idx === 4 ? 'Ej: Gestión de Talento y RRHH' :
+                                'Ej: Capacitación Ejecutiva'
+                              }
+                              className="w-full text-xs sm:text-sm font-bold text-slate-900 bg-white border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/5 rounded-xl px-3.5 py-2.5 outline-none  shadow-2xs placeholder:text-slate-400 placeholder:font-normal"
+                            />
+                          </div>
+
+                          {/* DESCRIPCIÓN */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                              Descripción breve *
+                            </label>
+                            <textarea
+                              value={svc.description}
+                              onChange={(e) => updateService(idx, 'description', e.target.value)}
+                              placeholder="Breve idea de lo que incluye, a quién está dirigido y qué resultados brinda..."
+                              className="w-full text-xs text-slate-800 bg-white border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/5 rounded-xl p-3 outline-none resize-none h-20 placeholder:text-slate-400 leading-relaxed shadow-2xs"
+                            />
+                          </div>
+
+                          {/* ÍCONO ORIENTATIVO */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                              Ícono orientativo (Opcional)
+                            </label>
+                            <input
+                              type="text"
+                              value={svc.iconHint}
+                              onChange={(e) => updateService(idx, 'iconHint', e.target.value)}
+                              placeholder="Ej: Gráfico, Balanza, Maletín, Escudo, Cohete"
+                              className="w-full text-xs text-slate-700 bg-white border border-slate-200 hover:border-slate-300 focus:border-slate-900 rounded-lg px-3 py-1.5 outline-none shadow-2xs placeholder:text-slate-400"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* ============================================================ */}
+            {/* STEP 9: FAQS SECTION */}
+            {/* ============================================================ */}
+            {currentStep.id === 'FAQS_SECTION' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 09 · Soluciones
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Preguntas frecuentes de tus clientes
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Anticípate a las dudas habituales de contratación, modalidades de pago o plazos de entrega.
+                  </p>
+                </div>
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <AgencyCopyTip message="Escribí las dudas y respuestas tal como las conversás en el día a día. Nuestro equipo cuidará la redacción para que luzcan claras y profesionales para tu web." />
+
+                  {data.faqs.map((faq, idx) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-xl bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus-within:border-slate-900 focus-within:bg-white transition-all flex flex-col gap-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between gap-2.5">
+                        <input
+                          type="text"
+                          value={faq.question}
+                          onChange={(e) => updateFaq(idx, 'question', e.target.value)}
+                          placeholder="Pregunta frecuente (Ej: ¿Cómo presupuestan?)"
+                          className="w-full font-extrabold text-xs sm:text-sm text-slate-900 bg-transparent outline-none "
+                        />
+                        {data.faqs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeFaq(idx)}
+                            className="text-slate-400 hover:text-red-500 p-1 cursor-pointer transition-colors"
+                            title="Eliminar pregunta"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+
+                      <textarea
+                        value={faq.answer}
+                        onChange={(e) => updateFaq(idx, 'answer', e.target.value)}
+                        placeholder="Respuesta explicada con palabras simples..."
+                        className="w-full text-xs text-slate-700 bg-white border border-slate-200/90 rounded-lg p-2.5 outline-none resize-none h-16 placeholder:text-slate-400 leading-relaxed shadow-2xs"
+                      />
                     </div>
                   ))}
-                  
-                  {data.t3Faqs.length < 5 && (
-                    <button onClick={addFaq} className="flex items-center justify-center gap-3 p-5 mt-2 border-2 border-dashed border-blue-300 text-blue-600 rounded-[2rem] hover:bg-blue-50 font-bold transition-colors text-lg">
-                      <Plus size={24} /> Añadir otra pregunta
+
+                  {data.faqs.length < 5 && (
+                    <button
+                      type="button"
+                      onClick={addFaq}
+                      className="h-11 rounded-xl border border-dashed border-slate-300 hover:border-slate-400 hover:bg-slate-50 text-slate-700 hover:text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus size={15} /> Añadir otra pregunta
                     </button>
                   )}
                 </div>
               </div>
             )}
 
-            {currentStep.id === 'FEATURED' && (
-              <div className="flex flex-col gap-4 md:gap-6 w-full max-w-5xl mx-auto px-2 md:px-0 py-4">
-                <div className="text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Exhibición</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-3"><Star className="text-yellow-400 fill-yellow-400 w-10 h-10"/> Tus Destacados</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mt-2 md:mt-4">Hacé clic en tus mejores productos para destacarlos bien arriba en la página.</p>
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mt-4 max-w-md mx-auto text-left md:text-center">
-                    <p className="text-slate-600 text-sm md:text-base">⚠️ Tenés que elegir <strong className="text-blue-600">al menos 1 producto destacado</strong> para continuar (Podés marcar hasta 6 haciendo clic en las fotos).</p>
-                  </div>
-                  <div className="inline-block mt-4 px-6 py-2 bg-blue-50 border border-blue-200 rounded-full text-blue-700 font-bold text-lg md:text-xl">Seleccionados: {data.featuredIds.length} / 6</div>
+            {/* ============================================================ */}
+            {/* STEP 10: CLIENTS & TESTIMONIALS */}
+            {/* ============================================================ */}
+            {currentStep.id === 'CLIENTS_TESTIMONIALS' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 10 · Prueba Social
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15] ">
+                    Testimonios: quienes confían en tu trabajo
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Las recomendaciones de directivos y clientes aceleran la toma de decisión en prospectos nuevos.
+                  </p>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mt-2">
-                  {data.categories.flatMap(c => c.items).filter(i => i.image).map(item => {
-                    const isSelected = data.featuredIds.includes(item.id);
-                    const isDisabled = !isSelected && data.featuredIds.length >= 6;
-                    return (
-                      <button key={item.id} onClick={() => toggleFeatured(item.id)} disabled={isDisabled} className={`relative rounded-3xl overflow-hidden border-4 flex flex-col bg-white text-left transition-all h-56 md:h-64 ${isSelected ? 'border-yellow-400 shadow-xl shadow-yellow-400/20 scale-[1.03]' : isDisabled ? 'border-slate-100 opacity-40 grayscale' : 'border-slate-100 hover:border-blue-300 hover:shadow-lg'}`}>
-                        <div className="flex-1 w-full p-4 flex items-center justify-center overflow-hidden bg-slate-50/50"><img src={item.image} alt={item.name} className="w-full h-full object-contain drop-shadow-sm" /></div>
-                        <div className="p-4 bg-white border-t border-slate-100 font-bold text-slate-800 text-center line-clamp-1 w-full text-sm md:text-base">{item.name || 'Sin nombre'}</div>
-                        {isSelected && <div className="absolute top-3 right-3 w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center text-white shadow-md"><Star size={16} className="fill-white"/></div>}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
 
-            {currentStep.id === 'T1_STATS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-4xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Prueba Social</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-4"><BarChart3 className="text-blue-500 w-10 h-10"/> Números de Éxito</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-0 max-w-2xl mx-auto">Los números venden. Cargá 4 estadísticas cortas que le den seguridad inmediata a los clientes al entrar a tu web.</p>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-2 max-w-2xl mx-auto text-left md:text-center">
-                  <p className="text-slate-600 text-sm md:text-base">💡 <strong className="text-blue-600">Debes completar las 4 cajas.</strong> Ejemplos: "Años en el rubro", "Pedidos entregados", "Clientes felices" o "Estrellas de valoración".</p>
-                </div>
-                <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-                  {[0,1,2,3].map((i) => (
-                    <div key={i} className="flex gap-4 bg-white p-4 rounded-3xl border-2 border-slate-200 focus-within:border-blue-500 transition-colors shadow-sm">
-                      <input value={data.stats[i].value} onChange={e=>updateStat(i,'value',e.target.value)} placeholder={['Ej: 10K+', 'Ej: 5', 'Ej: 50+', 'Ej: 99%'][i]} className="w-2/5 text-2xl md:text-4xl font-black text-slate-800 bg-transparent outline-none text-center border-r-2 border-slate-100 placeholder:font-normal placeholder:text-slate-300" />
-                      <input value={data.stats[i].label} onChange={e=>updateStat(i,'label',e.target.value)} placeholder={['Pedidos entregados', 'Años de experiencia', 'Opciones en menú', 'Clientes satisfechos'][i]} className="w-3/5 text-base md:text-xl font-medium text-slate-500 bg-transparent outline-none pl-3" />
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <label className="flex items-center gap-3.5 p-4 bg-slate-50/80 border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100/60 transition-all">
+                    <input
+                      type="checkbox"
+                      checked={data.useGoogleMapsReviews}
+                      onChange={(e) => handleInputChange('useGoogleMapsReviews', e.target.checked)}
+                      className="w-4 h-4 rounded text-slate-900 border-slate-300 focus:ring-0 shrink-0 cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-900 text-sm">
+                        Extraer opiniones directamente de Google Maps
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        Mostraremos las reseñas verificadas de tu ficha comercial.
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </label>
 
-            {currentStep.id === 'T1_EVENTS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Servicios Extra</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-4"><CalendarHeart className="text-blue-500 w-10 h-10"/> ¿Ofrecen algún servicio especial?</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-0">Podemos armar una sección especial en la web si además del día a día hacen eventos.</p>
-                <div className="flex gap-4 md:gap-6 mt-4">
-                  <button onClick={()=>handleInputChange('offersEvents', true)} className={`flex-1 p-6 md:p-8 rounded-3xl border-4 font-bold text-xl md:text-2xl transition-all ${data.offersEvents === true ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white hover:border-blue-300'}`}>Sí, ofrecemos</button>
-                  <button onClick={()=>handleInputChange('offersEvents', false)} className={`flex-1 p-6 md:p-8 rounded-3xl border-4 font-bold text-xl md:text-2xl transition-all ${data.offersEvents === false ? 'border-slate-900 bg-slate-900 text-white shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'}`}>No por ahora</button>
-                </div>
-                {data.offersEvents === true && (
-                  <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} className="mt-6 text-left bg-white p-6 md:p-8 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 md:gap-5">
-                    <input type="text" value={data.eventTitle} onChange={e=>handleInputChange('eventTitle', e.target.value)} placeholder="Título. Ej: Servicio de Catering Integral" className="w-full text-xl md:text-2xl font-bold bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none p-4 md:p-5 transition-all" />
-                    <textarea value={data.eventDescription} onChange={(e) => handleInputChange('eventDescription', e.target.value)} placeholder="Contanos brevemente de qué trata..." className="w-full text-lg md:text-xl text-slate-600 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none p-5 md:p-6 min-h-[140px] resize-none transition-all" />
-                  </motion.div>
-                )}
-              </div>
-            )}
-
-            {currentStep.id === 'T2_STORY' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-amber-500 uppercase mb-0">Acerca de la marca</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">Nuestra Inspiración</h2>
-                <div className="flex items-start gap-4 bg-amber-50 p-4 md:p-5 rounded-2xl text-left border border-amber-100 mt-2 text-sm md:text-base">
-                  <Info className="text-amber-600 shrink-0 mt-0.5" size={24} />
-                  <p className="text-amber-800 leading-relaxed">A los clientes que compran muebles premium les encanta conectar con la historia detrás del taller. Contanos de ustedes, hace cuánto están, qué los motiva.</p>
-                </div>
-                <div className="flex flex-col gap-6 md:gap-8 text-left mt-2">
-                  <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
-                    <textarea value={data.t2StoryText} onChange={(e) => handleInputChange('t2StoryText', e.target.value)} placeholder="Ej: Somos un taller familiar. Arrancamos restaurando muebles para amigos..." className="w-full text-lg md:text-xl text-slate-600 bg-slate-50 border-2 border-transparent focus:border-amber-400 focus:bg-white rounded-2xl outline-none p-5 md:p-6 min-h-[160px] md:min-h-[200px] resize-none transition-all" />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 text-lg md:text-xl mb-4 block px-2">Compartinos una foto del equipo o del taller (Horizontal)</label>
-                    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100"><ImageUpload userId={data.mercadoLibreUser} value={data.t2StoryImage} onChange={(url) => handleInputChange('t2StoryImage', url)} /></div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'T2_MATERIALS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-4xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-amber-500 uppercase mb-0">Valor Agregado</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2">Detalles y Calidad</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-0 max-w-2xl mx-auto">Contanos sobre la calidad de tus materiales o qué buscás transmitir en cada mueble.</p>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mt-2 max-w-2xl mx-auto text-left md:text-center">
-                  <p className="text-slate-600 text-sm md:text-base">💡 Escribí el texto y subí <strong className="text-blue-600">al menos 1 foto</strong> de texturas, telas, maderas o muebles terminados para poder avanzar (podés subir hasta 6 para armar una buena galería).</p>
-                </div>
-                <div className="flex flex-col gap-6 mt-2">
-                  <textarea value={data.t2MaterialsText} onChange={(e) => handleInputChange('t2MaterialsText', e.target.value)} placeholder="Ej: Trabajamos solo con materiales nobles. Desde madera maciza de petiribí hasta tapizados antimanchas..." className="w-full text-lg md:text-xl bg-white border-2 border-slate-200 focus:border-amber-400 rounded-3xl outline-none p-6 md:p-8 min-h-[160px] resize-none transition-all shadow-sm text-center shrink-0" />
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm shrink-0">
-                    {[0,1,2,3,4,5].map(i => (
-                      <div key={i} className="h-32 md:h-48 rounded-2xl overflow-hidden bg-slate-50 border-2 border-dashed border-slate-200 hover:border-amber-400 transition-colors relative">
-                          <ImageUpload userId={data.mercadoLibreUser} label="" value={data.t2MaterialsImages[i] || ''} onChange={url=>updateT2MaterialImage(i,url)} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'T2_STRENGTHS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-amber-500 uppercase mb-0">Exhibición</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-3"><Award className="text-amber-500 w-10 h-10"/> Puntos Fuertes</h2>
-                <p className="text-lg md:text-2xl text-slate-500 mb-4">Nombrá 3 cosas puntuales por las que te destacás. Las pondremos como garantías visuales en tu web justo antes de mostrar tu catálogo.</p>
-                <div className="flex flex-col gap-4 text-left">
-                  {[0,1,2].map((i) => (
-                    <input key={i} value={data.t2Strengths[i]} onChange={e=>updateT2Strength(i, e.target.value)} placeholder={['Punto fuerte 1', 'Punto fuerte 2', 'Punto fuerte 3'][i]} className="w-full text-xl md:text-2xl bg-white border-2 border-slate-200 rounded-[2rem] focus:border-amber-500 outline-none p-6 transition-all shadow-sm" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'STRENGTHS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-0">Confianza</p>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 flex items-center justify-center gap-4"><HeartHandshake className="text-blue-500 w-10 h-10"/> ¿Por qué deberían elegirte?</h2>
-                <div className="flex items-start gap-4 bg-blue-50 p-5 rounded-2xl text-left border border-blue-100 mt-2 mb-2 text-sm md:text-base">
-                  <Info className="text-blue-500 shrink-0 mt-0.5" size={24} />
-                  <p className="text-blue-800 leading-relaxed">En el rubro de los servicios, la confianza lo es todo. Tiranos un par de ideas sueltas (Ej: "Tengo matrícula al día", "Voy rápido si es urgencia", "Doy 6 meses de garantía"). Nuestro equipo lo redactará como un checklist profesional súper convincente.</p>
-                </div>
-                <textarea value={data.strengths} onChange={(e) => handleInputChange('strengths', e.target.value)} placeholder="Escribí tus puntos fuertes acá. Es obligatorio para avanzar..." className="w-full text-xl md:text-2xl text-slate-600 bg-white border-2 border-slate-200 rounded-[2rem] focus:border-blue-500 outline-none p-6 md:p-8 transition-all min-h-[200px] resize-none shadow-sm text-center" />
-              </div>
-            )}
-
-            {currentStep.id === 'REVIEWS_NEW' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-5xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <div className="flex flex-col text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Prueba Social</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2 md:mb-4">Las opiniones reales venden.</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mb-4">Los clientes nuevos confían en los clientes viejos. Mostrales que hacés un buen trabajo.</p>
-                </div>
-                
-                <label className="flex items-center justify-center gap-4 p-6 bg-blue-50 border-2 border-blue-200 rounded-3xl cursor-pointer hover:border-blue-400 transition-colors shadow-sm max-w-2xl mx-auto w-full mb-4">
-                  <input type="checkbox" checked={data.useGoogleMapsReviews} onChange={(e) => handleInputChange('useGoogleMapsReviews', e.target.checked)} className="w-7 h-7 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
-                  <div className="flex flex-col text-left">
-                    <span className="text-blue-900 font-bold text-xl md:text-2xl leading-tight mb-1">Tengo Google Maps. Sacá las reseñas de ahí.</span>
-                    <span className="text-blue-700 text-sm md:text-base">Es la opción más recomendada porque da mucha transparencia.</span>
-                  </div>
-                </label>
-
-                {data.useGoogleMapsReviews ? (
-                  <motion.div initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} className="max-w-xl mx-auto w-full">
-                    <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                      <label className="font-bold text-slate-700 text-base md:text-lg block text-left mb-3">Pegá el link a tu perfil de Google Maps acá (Obligatorio):</label>
-                      <div className="flex items-center gap-3 bg-slate-50 border-2 border-slate-200 focus-within:border-blue-500 rounded-2xl px-4 py-2 transition-all">
-                        <LinkIcon className="text-slate-400 w-6 h-6"/>
-                        <input type="text" value={data.googleMapsLink} onChange={e=>handleInputChange('googleMapsLink', e.target.value)} placeholder="https://maps.app.goo.gl/..." className="w-full text-lg md:text-xl bg-transparent outline-none p-2" autoFocus />
+                  {data.useGoogleMapsReviews ? (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                        Enlace a tu perfil de Google Maps *
+                      </label>
+                      <div className="h-13 flex items-center gap-2.5 bg-slate-50/70 border border-slate-200 rounded-xl px-4 focus-within:border-slate-900 focus-within:bg-white transition-all shadow-2xs">
+                        <LinkIcon size={16} className="text-slate-400 shrink-0" />
+                        <input
+                          type="text"
+                          value={data.googleMapsLink}
+                          onChange={(e) => handleInputChange('googleMapsLink', e.target.value)}
+                          placeholder="https://maps.app.goo.gl/..."
+                          className="w-full text-xs sm:text-sm text-slate-900 bg-transparent outline-none font-medium"
+                        />
                       </div>
                     </div>
-                  </motion.div>
-                ) : (
-                  <motion.div initial={{opacity:0}} animate={{opacity:1}} className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
-                    <p className="col-span-full text-center text-slate-500 text-base md:text-lg">O podés copiar y pegar 3 reseñas manualmente (Debés completar las 3 para avanzar):</p>
-                    {[0,1,2].map((i) => (
-                      <div key={i} className="bg-white p-6 md:p-8 rounded-[2rem] border-2 border-slate-100 shadow-sm flex flex-col gap-4 relative focus-within:border-blue-400 transition-all">
-                        <div className="absolute -top-6 left-8 text-7xl text-blue-200 font-serif leading-none">"</div>
-                        <textarea value={data.reviewsList[i].text} onChange={e=>updateReview(i,'text',e.target.value)} placeholder={`"Excelente atención, el pedido llegó rapidísimo..."`} className="w-full text-lg text-slate-600 bg-transparent outline-none resize-none h-32 md:h-40 relative z-10 pt-4" />
-                        <div className="border-t border-slate-100 pt-5 mt-auto">
-                          <input value={data.reviewsList[i].name} onChange={e=>updateReview(i,'name',e.target.value)} placeholder="Nombre (Ej: María G.)" className="w-full font-black text-xl text-slate-800 bg-transparent outline-none" />
-                          <div className="flex gap-1 text-yellow-400 mt-2"><Star size={18} fill="currentColor"/><Star size={18} fill="currentColor"/><Star size={18} fill="currentColor"/><Star size={18} fill="currentColor"/><Star size={18} fill="currentColor"/></div>
+                  ) : (
+                    <div className="flex flex-col gap-3.5">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <span className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wide">
+                          3 Testimonios Corporativos *
+                        </span>
+                        <div className="flex gap-0.5 text-amber-400">
+                          <Star size={13} fill="currentColor" />
+                          <Star size={13} fill="currentColor" />
+                          <Star size={13} fill="currentColor" />
+                          <Star size={13} fill="currentColor" />
+                          <Star size={13} fill="currentColor" />
                         </div>
                       </div>
-                    ))}
-                  </motion.div>
-                )}
+
+                      {data.reviewsList.map((review, idx) => (
+                        <div
+                          key={idx}
+                          className="p-4 rounded-xl bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus-within:border-slate-900 focus-within:bg-white transition-all flex flex-col gap-2.5 shadow-2xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs  font-bold text-slate-400">Testimonio 0{idx + 1}</span>
+                            <Quote size={14} className="text-slate-300" />
+                          </div>
+
+                          <textarea
+                            value={review.text}
+                            onChange={(e) => updateReview(idx, 'text', e.target.value)}
+                            placeholder="Cita del cliente sobre el impacto o resultados..."
+                            className="w-full text-xs text-slate-800 bg-white border border-slate-200/90 rounded-lg p-2.5 outline-none resize-none h-18 placeholder:text-slate-400 leading-relaxed shadow-2xs"
+                          />
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              value={review.name}
+                              onChange={(e) => updateReview(idx, 'name', e.target.value)}
+                              placeholder="Nombre (Ej: Lic. Martín Gómez)"
+                              className="h-10 bg-white border border-slate-200/90 rounded-lg px-3 text-xs text-slate-900 font-bold placeholder:text-slate-400 outline-none shadow-2xs"
+                            />
+                            <input
+                              type="text"
+                              value={review.company || ''}
+                              onChange={(e) => updateReview(idx, 'company', e.target.value)}
+                              placeholder="Cargo / Empresa (Ej: Director en FinGroup)"
+                              className="h-10 bg-white border border-slate-200/90 rounded-lg px-3 text-xs text-slate-600 placeholder:text-slate-400 outline-none shadow-2xs"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {currentStep.id === 'CONTACT_NEW' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-2xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <div className="flex flex-col text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Información Final</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900 mb-2">Redes y Contacto</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mb-0">A dónde querés que vayan a parar tus clientes cuando toquen los botones de contacto en tu web.</p>
+            {/* ============================================================ */}
+            {/* STEP 11: CONTACT CHANNELS */}
+            {/* ============================================================ */}
+            {currentStep.id === 'CONTACT_CHANNELS' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 11 · Contacto
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15]">
+                    Canales de contacto y presencia
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Vías oficiales donde se derivarán las consultas comerciales y prospectos calificados.
+                  </p>
                 </div>
-                <div className="flex flex-col gap-6 text-left mt-2">
-                  <div className="flex items-center gap-6 bg-white border-2 border-slate-100 rounded-[2rem] p-5 focus-within:border-green-500 transition-all shadow-sm">
-                    <div className="p-4 bg-green-50 text-green-500 rounded-2xl shrink-0"><Phone className="w-8 h-8" /></div>
-                    <div className="flex flex-col w-full"><span className="text-sm font-bold text-slate-400 uppercase mb-1">WhatsApp Ventas <strong className="text-green-500">(Obligatorio)</strong></span><input type="text" value={data.whatsapp} onChange={(e) => handleInputChange('whatsapp', e.target.value)} placeholder="+54 9 11 0000-0000" className="w-full bg-transparent outline-none py-1 text-xl md:text-2xl font-black text-slate-800" /></div>
-                  </div>
-                  <div className="flex items-center gap-6 bg-white border-2 border-slate-100 rounded-[2rem] p-5 focus-within:border-pink-500 transition-all shadow-sm">
-                    <div className="p-4 bg-pink-50 text-pink-500 rounded-2xl shrink-0"><AtSign className="w-8 h-8" /></div>
-                    <div className="flex flex-col w-full"><span className="text-sm font-bold text-slate-400 uppercase mb-1">Instagram o Facebook <strong className="text-slate-400 font-normal normal-case">(Opcional)</strong></span><input type="text" value={data.socialLinks} onChange={(e) => handleInputChange('socialLinks', e.target.value)} placeholder="@tu_marca o link directo" className="w-full bg-transparent outline-none py-1 text-xl md:text-2xl font-black text-slate-800" /></div>
-                  </div>
-                  
-                  <div className="flex items-center gap-6 bg-white border-2 border-slate-100 rounded-[2rem] p-5 focus-within:border-blue-500 transition-all shadow-sm">
-                    <div className="p-4 bg-blue-50 text-blue-500 rounded-2xl shrink-0"><MapPin className="w-8 h-8" /></div>
-                    <div className="flex flex-col w-full">
-                      <span className="text-sm font-bold text-slate-400 uppercase mb-1">Ubicación Física (Si tenés local - Opcional)</span>
-                      <p className="text-xs text-slate-500 mb-2 leading-tight">Buscá tu calle y altura o nombre del local. Te generaremos un link de Google Maps automáticamente.</p>
-                      <AddressAutocomplete value={data.address} onChange={(url) => handleInputChange('address', url)} />
+
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  {/* CANALES OBLIGATORIOS: WHATSAPP Y EMAIL */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs sm:text-sm font-semibold text-slate-700 tracking-wide flex items-center gap-2">
+                        <WhatsAppIcon size={15} className="text-slate-500 shrink-0" />
+                        <span>WhatsApp Comercial *</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={data.whatsapp}
+                        onChange={(e) => handleInputChange('whatsapp', e.target.value)}
+                        placeholder="+54 9 11 0000-0000"
+                        className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none transition-all shadow-2xs"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs sm:text-sm font-semibold text-slate-700 tracking-wide flex items-center gap-2">
+                        <Mail size={15} className="text-slate-500 shrink-0" />
+                        <span>Email Institucional *</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={data.corporateEmail}
+                        onChange={(e) => handleInputChange('corporateEmail', e.target.value)}
+                        placeholder="contacto@empresa.com o info@estudio.com"
+                        className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm font-semibold text-slate-900 outline-none transition-all shadow-2xs"
+                      />
                     </div>
                   </div>
+
+                  <div className="h-px bg-slate-100 my-1" />
+
+                  {/* REDES SOCIALES: INSTAGRAM Y FACEBOOK (MINIMALISTAS) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs sm:text-sm font-semibold text-slate-700 tracking-wide flex items-center gap-2">
+                        <InstagramIcon size={15} className="text-slate-500 shrink-0" />
+                        <span>Instagram (Opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={data.instagram}
+                        onChange={(e) => handleInputChange('instagram', e.target.value)}
+                        placeholder="@tuempresa o instagram.com/tuempresa"
+                        className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm text-slate-900 outline-none transition-all shadow-2xs"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs sm:text-sm font-semibold text-slate-700 tracking-wide flex items-center gap-2">
+                        <FacebookIcon size={15} className="text-slate-500 shrink-0" />
+                        <span>Facebook (Opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={data.facebook}
+                        onChange={(e) => handleInputChange('facebook', e.target.value)}
+                        placeholder="facebook.com/tuempresa o @tuempresa"
+                        className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm text-slate-900 outline-none transition-all shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* LINKEDIN */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-slate-700 tracking-wide flex items-center gap-2">
+                      <LinkedinIcon size={15} className="text-slate-500 shrink-0" />
+                      <span>Página de LinkedIn (Opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={data.linkedin}
+                      onChange={(e) => handleInputChange('linkedin', e.target.value)}
+                      placeholder="https://www.linkedin.com/company/tu-empresa"
+                      className="w-full h-13 bg-slate-50/70 border border-slate-200 hover:border-slate-300 focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 rounded-xl px-4 text-sm text-slate-900 outline-none transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  {/* DIRECCIÓN FÍSICA */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs sm:text-sm font-semibold text-slate-700 tracking-wide flex items-center gap-2">
+                      <MapPin size={15} className="text-slate-500 shrink-0" />
+                      <span>Dirección de Sede Física u Oficinas (Opcional)</span>
+                    </label>
+                    <AddressAutocomplete
+                      value={data.address}
+                      onChange={(url) => handleInputChange('address', url)}
+                    />
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* --- UPSELL DOMINIO (SaaS PRICING CARDS - OPTIMIZADAS CON ZOOM) --- */}
-            {currentStep.id === 'DOMAIN_TYPE' && (
-              <div className="flex flex-col w-full max-w-[1200px] mx-auto px-2 lg:px-4 py-2">
-                <div className="text-center mb-6 md:mb-8">
-                  <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-2">Tu identidad en internet</h2>
-                  <p className="text-sm md:text-base text-slate-500">Seleccioná tu dominio. Deslizá hacia los lados en tu celular para ver las opciones.</p>
+            {/* ============================================================ */}
+            {/* STEP 12: DOMAIN PLAN */}
+            {/* ============================================================ */}
+            {currentStep.id === 'DOMAIN_PLAN' && (
+              <StepDomainPlan
+                selectedPlan={data.domainPlan}
+                onSelectPlan={(plan) => handleInputChange('domainPlan', plan)}
+              />
+            )}
+
+            {/* ============================================================ */}
+            {/* STEP 13: DOMAIN PREFERENCES */}
+            {/* ============================================================ */}
+            {currentStep.id === 'DOMAIN_PREFERENCES' && (
+              <StepDomainPreferences
+                selectedPlan={data.domainPlan}
+                domainOption1={data.domainOption1}
+                domainOption2={data.domainOption2}
+                domainOption3={data.domainOption3}
+                onChangeOption={handleInputChange}
+                onGoBackToPlans={() => {
+                  const planStepIndex = STEPS.findIndex((s) => s.id === 'DOMAIN_PLAN');
+                  if (planStepIndex >= 0) {
+                    setDirection(-1);
+                    setCurrentStepIndex(planStepIndex);
+                  }
+                }}
+              />
+            )}
+
+            {/* ============================================================ */}
+            {/* STEP 13: FINAL REVIEW & CONFIRMATION */}
+            {/* ============================================================ */}
+            {currentStep.id === 'FINAL_REVIEW' && (
+              <div className="flex flex-col gap-6 py-2">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-slate-400 tracking-wider uppercase">
+                    Paso 14 · Confirmación
+                  </span>
+                  <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-[1.15]">
+                    Ficha final del proyecto
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-500 leading-relaxed">
+                    Revisa los datos recopilados antes de enviar la orden definitiva al equipo.
+                  </p>
                 </div>
 
-                {/* SCROLL HORIZONTAL MOBILE / GRID DESKTOP - Agregado py-8 (padding top y bottom) para que el zoom scale-[1.02] no corte las líneas de las tarjetas seleccionadas */}
-                <div className="flex lg:grid lg:grid-cols-3 gap-4 lg:gap-6 overflow-x-auto lg:overflow-visible snap-x snap-mandatory hide-scrollbar py-8 -mx-4 px-4 lg:mx-0 lg:px-0 items-stretch">
-                  
-                  {/* CARD 1: GRATIS */}
-                  <div onClick={() => handleInputChange('domainType', 'GRATIS')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all cursor-pointer min-w-[85vw] sm:min-w-[320px] lg:min-w-0 snap-center bg-white ${data.domainType === 'GRATIS' ? 'border-slate-800 shadow-xl ring-1 ring-slate-800/20 scale-[1.02]' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <div className="mb-4">
-                      <span className="text-[11px] font-bold tracking-widest uppercase text-slate-500 mb-1 block">Inicial</span>
-                      <h3 className="text-2xl font-black text-slate-900 leading-tight">Opción Express</h3>
-                      <div className="flex items-end gap-1 mt-2">
-                        <span className="text-3xl font-black text-slate-900">Gratis</span>
-                        <span className="text-sm text-slate-500 font-medium mb-1">.vercel.app</span>
+                <div className="glass-panel rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col gap-5">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-base sm:text-lg font-bold text-slate-900">{data.companyName || 'Empresa Corporativa'}</h3>
+                      {data.slogan && <p className="text-xs text-slate-500 italic mt-0.5">"{data.slogan}"</p>}
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-semibold">
+                      AG Digital Studio
+                    </span>
+                  </div>
+
+                  {/* RESUMEN DE FICHA DE SERVICIO PERFECTAMENTE ALINEADO */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 items-stretch">
+                    {/* CARD 1: IDENTIDAD VISUAL */}
+                    <div className="p-4 sm:p-4.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col justify-between h-full">
+                      <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-200/60">
+                        <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                          01 · Identidad Visual
+                        </span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                      </div>
+                      <div className="flex flex-col gap-2 text-xs">
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Logotipo:</span>
+                          <span className="font-semibold text-slate-900 truncate min-w-0 flex-1">
+                            {data.noLogo ? 'Diseño tipográfico' : 'Logotipo oficial cargado'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Tipografía:</span>
+                          <span className="font-semibold text-slate-800 truncate min-w-0 flex-1">
+                            {data.typography || 'A criterio de diseño'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Tono visual:</span>
+                          <span className="text-slate-700 truncate min-w-0 flex-1">
+                            {data.backgroundTone ? data.backgroundTone.split(' (')[0] : 'A criterio de diseño'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="w-full h-px bg-slate-100 mb-5" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow mt-2">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-slate-400 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Costo Cero de Mantenimiento</span><span className="text-xs text-slate-500 leading-relaxed mt-1">No hay pagos anuales, ni renovaciones. Alojamiento 100% bonificado.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-slate-400 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Activación Inmediata</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Web online en 48hs sin depender de registros externos.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-slate-400 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">SSL Incluido</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Certificado de sitio seguro bonificado para tus clientas.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-slate-400 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Ideal Redes Sociales</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Perfecto para link en bio rápida de Instagram/TikTok.</span></div></li>
-                      <li className="flex items-start gap-3 mt-auto pt-4 border-t border-slate-50"><Globe className="w-5 h-5 text-blue-400 shrink-0"/><div className="flex flex-col"><span className="text-xs text-slate-500 leading-relaxed">Fricción cero. Nosotros generamos el enlace listo para compartir al instante.</span></div></li>
-                    </ul>
-                  </div>
 
-                  {/* CARD 2: .COM.AR */}
-                  <div onClick={() => handleInputChange('domainType', 'COMAR')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all cursor-pointer min-w-[85vw] sm:min-w-[320px] lg:min-w-0 snap-center bg-white ${data.domainType === 'COMAR' ? 'border-blue-600 shadow-2xl ring-1 ring-blue-600/20 scale-[1.02]' : 'border-slate-200 hover:border-blue-300'}`}>
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest shadow-md flex items-center gap-1.5 w-max z-10">
-                      <TrendingUp size={14} className="fill-white"/> MEJOR VALOR
-                    </div>
-                    <div className="mb-4 mt-2">
-                      <span className="text-[11px] font-bold tracking-widest uppercase text-blue-600 mb-1 block">Nacional</span>
-                      <h3 className="text-2xl font-black text-slate-900 leading-tight">Opción Local</h3>
-                      <div className="flex items-end gap-1 mt-2">
-                        <span className="text-3xl font-black text-blue-600">+$15.000</span>
-                        <span className="text-xs text-blue-600 font-bold mb-1">ARS/año</span>
-                        <span className="text-sm text-slate-500 font-medium mb-1 ml-1">(.com.ar)</span>
+                    {/* CARD 2: ESTRUCTURA & SOLUCIONES */}
+                    <div className="p-4 sm:p-4.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col justify-between h-full">
+                      <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-200/60">
+                        <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                          02 · Estructura & Contenido
+                        </span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                      </div>
+                      <div className="flex flex-col gap-2 text-xs">
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Servicios:</span>
+                          <span className="font-semibold text-slate-900 truncate min-w-0 flex-1">
+                            6 Soluciones corporativas
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Preguntas FAQ:</span>
+                          <span className="font-semibold text-slate-800 truncate min-w-0 flex-1">
+                            {data.faqs.filter(f => f.question).length} Preguntas cargadas
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Testimonios:</span>
+                          <span className="text-slate-700 truncate min-w-0 flex-1">
+                            {data.useGoogleMapsReviews ? 'Google Maps verificado' : `${data.reviewsList.filter(r => r.name).length} Testimonios manuales`}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="w-full h-px bg-slate-100 mb-5" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow mt-2">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Identidad Nacional</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Genera confianza inmediata al mostrar que operás en Argentina.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Posicionamiento Local</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Ideal para aparecer más rápido en Google en tu ciudad.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Titularidad Legal</span><span className="text-xs text-slate-500 leading-relaxed mt-1">El nombre queda registrado 100% bajo tu CUIT/CUIL.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Previsibilidad</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Mantenimiento anual fijo en pesos, sin impuestos sorpresa.</span></div></li>
-                      <li className="flex items-start gap-3 mt-auto pt-4 border-t border-slate-50"><Info className="w-5 h-5 text-blue-400 shrink-0"/><div className="flex flex-col"><span className="text-xs text-slate-500 leading-relaxed">Registro legal bajo tu CUIT. Te enviamos un tutorial simple para delegarnos en AFIP.</span></div></li>
-                    </ul>
-                  </div>
 
-                  {/* CARD 3: .COM */}
-                  <div onClick={() => handleInputChange('domainType', 'COM')} className={`relative h-full flex flex-col p-6 md:p-8 rounded-[2rem] border-2 transition-all cursor-pointer min-w-[85vw] sm:min-w-[320px] lg:min-w-0 snap-center bg-white ${data.domainType === 'COM' ? 'border-violet-600 shadow-2xl ring-1 ring-violet-600/20 scale-[1.02]' : 'border-slate-200 hover:border-violet-300'}`}>
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest shadow-md flex items-center gap-1.5 w-max z-10">
-                      <Star size={14} className="fill-white"/> VIP / MÁS ELEGIDO
-                    </div>
-                    <div className="mb-4 mt-2">
-                      <span className="text-[11px] font-bold tracking-widest uppercase text-violet-600 mb-1 block">Internacional</span>
-                      <h3 className="text-2xl font-black text-slate-900 leading-tight">Opción VIP</h3>
-                      <div className="flex items-end gap-1 mt-2">
-                        <span className="text-3xl font-black text-violet-600">+$30.000</span>
-                        <span className="text-xs text-violet-600 font-bold mb-1">ARS/año</span>
-                        <span className="text-sm text-slate-500 font-medium mb-1 ml-1">(.com)</span>
+                    {/* CARD 3: CANALES DE CONTACTO */}
+                    <div className="p-4 sm:p-4.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col justify-between h-full">
+                      <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-200/60">
+                        <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                          03 · Canales de Contacto
+                        </span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                      </div>
+                      <div className="flex flex-col gap-2 text-xs">
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">WhatsApp:</span>
+                          <span className="font-semibold text-slate-900 truncate min-w-0 flex-1">
+                            {data.whatsapp || 'Sin registrar'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Email:</span>
+                          <span className="font-semibold text-slate-800 truncate min-w-0 flex-1">
+                            {data.corporateEmail || 'Sin registrar'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Presencia Social:</span>
+                          <span className="text-slate-700 truncate min-w-0 flex-1">
+                            {data.instagram ? `@${data.instagram.replace('@','')}` : data.facebook ? 'Facebook configurado' : data.linkedin ? 'LinkedIn configurado' : 'Canales listos'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="w-full h-px bg-slate-100 mb-5" />
-                    
-                    <ul className="flex flex-col gap-4 flex-grow mt-2">
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-violet-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Fricción Cero</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Activación inmediata. Tu web queda online sin trámites burocráticos.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-violet-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Prestigio Global</span><span className="text-xs text-slate-500 leading-relaxed mt-1">La terminación más reconocida y profesional a nivel mundial.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-violet-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Llave en Mano</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Nos hacemos cargo del 100% del setup técnico y pagos.</span></div></li>
-                      <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-violet-500 shrink-0"/><div className="flex flex-col"><span className="text-sm text-slate-700 font-bold">Privacidad Total</span><span className="text-xs text-slate-500 leading-relaxed mt-1">Tus datos personales no quedan expuestos en registros locales.</span></div></li>
-                      <li className="flex items-start gap-3 mt-auto pt-4 border-t border-slate-50"><Globe className="w-5 h-5 text-violet-400 shrink-0"/><div className="flex flex-col"><span className="text-xs text-slate-500 leading-relaxed">Vos nos confirmás el nombre de tu marca y nosotros nos aseguramos de que funcione.</span></div></li>
-                    </ul>
-                  </div>
 
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'DOMAIN_OPTIONS' && (
-              <div className="flex flex-col gap-4 md:gap-6 max-w-2xl mx-auto w-full text-center px-2 md:px-0 py-4">
-                <div className="flex flex-col text-center">
-                  <p className="text-sm md:text-base font-bold tracking-widest text-blue-500 uppercase mb-1">Nombres</p>
-                  <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">Elegí tu nombre web</h2>
-                  <p className="text-lg md:text-2xl text-slate-500 mb-0 max-w-xl mx-auto">Dejanos 3 opciones en orden de prioridad. Nuestro equipo técnico va a chequear cuál está disponible para registrarlo a tu nombre.</p>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-2 md:mb-4">
-                  <p className="text-slate-600 text-sm md:text-base">💡 Debés completar las 3 opciones para poder avanzar al último paso.</p>
-                </div>
-                <div className="flex flex-col gap-4 text-left bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-slate-100">
-                  {[0,1,2].map((i) => (
-                    <div key={i} className="flex gap-4 items-center group">
-                      <div className="w-12 h-12 md:w-14 md:h-14 shrink-0 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center font-black text-xl md:text-2xl">{i+1}</div>
-                      <input value={data.domainOptionsList[i]} onChange={(e) => updateDomainOption(i, e.target.value)} placeholder={`Ej: ${['mitiendamuebles', 'mueblesmitienda', 'tiendamueblesarg'][i]}`} className="w-full text-xl md:text-2xl bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 focus:bg-white outline-none p-4 transition-all" autoFocus={i===0} />
+                    {/* CARD 4: DIRECCIÓN WEB & HOSPEDAJE */}
+                    <div className="p-4 sm:p-4.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col justify-between h-full">
+                      <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-200/60">
+                        <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                          04 · Dirección Web & Hosting
+                        </span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                      </div>
+                      <div className="flex flex-col gap-2 text-xs">
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Plan Dominio:</span>
+                          <span className="font-semibold text-slate-900 truncate min-w-0 flex-1">
+                            {DOMAIN_PLANS[data.domainPlan]?.name || 'Dominio Web'} ({DOMAIN_PLANS[data.domainPlan]?.priceFormatted})
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">1ª Opción:</span>
+                          <span className="font-semibold text-slate-800 truncate min-w-0 flex-1">
+                            {data.domainOption1 || 'A definir'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Alternativa:</span>
+                          <span className="text-slate-700 truncate min-w-0 flex-1">
+                            {data.domainOption2 ? data.domainOption2 : 'No especificada'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="w-28 sm:w-32 shrink-0 text-slate-500 font-medium">Hosting Cloud:</span>
+                          <span className="text-slate-700 truncate min-w-0 flex-1">
+                            Alojado en Vercel (Gratuito) + SSL
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* --- PASO DE TÉRMINOS --- */}
-            {currentStep.id === 'TERMS' && (
-              <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full text-center px-2 py-4">
-                <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2"><ShieldCheck size={40}/></div>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight text-slate-900">Acuerdo de Servicio</h2>
-                <div className="bg-white p-8 md:p-10 rounded-[2rem] border-2 border-slate-200 shadow-sm text-left">
-                  <label className="flex items-start gap-4 cursor-pointer">
-                    <input type="checkbox" checked={data.acceptedTerms} onChange={e=>handleInputChange('acceptedTerms', e.target.checked)} className="w-6 h-6 mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
-                    <p className="text-base md:text-lg text-slate-600 leading-relaxed">
-                      Entiendo que el servicio inicial incluye el diseño y puesta online de la web tal como se entrega hoy. Para garantizar la seguridad del código, la web no posee panel autogestionable. Si en el futuro deseo modificar textos, el logo o cambiar fotografías de la galería, podré solicitar un Ticket de Actualización a soporte por un costo de <strong>$15.000 ARS.</strong>
-                    </p>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {currentStep.id === 'END' && (
-              <div className="text-center flex flex-col items-center justify-center h-full max-w-2xl mx-auto px-4 py-12">
-                {isSubmitting ? (
-                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}><Loader2 className="text-blue-500 mb-8 w-20 h-20" /></motion.div>
-                ) : (
-                  <Sparkles className="text-blue-500 mb-8 animate-pulse w-20 h-20" />
-                )}
-                
-                <h2 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight mb-6">¡Todo listo! 🎉</h2>
-                
-                <div className="w-full bg-white border-2 border-slate-200 rounded-[2rem] p-8 mb-10 text-left shadow-sm">
-                  <h3 className="font-bold text-xl text-slate-800 border-b border-slate-100 pb-4 mb-5">Resumen de tu proyecto:</h3>
-                  
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-lg text-slate-600">Diseño Web ({data.templateSelected})</span>
-                    <span className="text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg">¡Bonificado!</span>
-                  </div>
-                  
-                  {data.domainType === 'COM' && <div className="flex justify-between items-center mb-4"><span className="text-lg text-slate-600">Registro Dominio .COM</span><span className="text-lg font-bold text-slate-800">$30.000</span></div>}
-                  {data.domainType === 'COMAR' && <div className="flex justify-between items-center mb-4"><span className="text-lg text-slate-600">Registro Dominio .COM.AR</span><span className="text-lg font-bold text-slate-800">$15.000</span></div>}
-                  {data.domainType === 'GRATIS' && <div className="flex justify-between items-center mb-4"><span className="text-lg text-slate-600">Subdominio Gratuito</span><span className="text-lg font-bold text-slate-800">$0</span></div>}
-                  
-                  {data.templateSelected === 'T1' && data.t1MenuMode === 'ecommerce' && <div className="flex justify-between items-center mb-4"><span className="text-lg text-slate-600">Módulo E-commerce Lite</span><span className="text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg">¡Bonificado!</span></div>}
-                  {data.templateSelected === 'T2' && data.t2Dynamic === 'productos' && data.t2ProductMode === 'vitrina' && <div className="flex justify-between items-center mb-4"><span className="text-lg text-slate-600">Catálogo Interactivo</span><span className="text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg">¡Bonificado!</span></div>}
-                  {data.templateSelected === 'T2' && data.t2Dynamic === 'servicios' && data.t2ServicePricing === 'con_precios' && <div className="flex justify-between items-center mb-4"><span className="text-lg text-slate-600">Lista Interactiva</span><span className="text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg">¡Bonificado!</span></div>}
-                  
-                  <div className="border-t-4 border-slate-100 pt-6 mt-6 flex justify-between items-center">
-                    <span className="font-black text-2xl text-slate-900">TOTAL</span>
-                    <span className="font-black text-4xl text-blue-600">${calculateTotal().toLocaleString('es-AR')}</span>
                   </div>
                 </div>
 
-                <button onClick={handleSubmit} disabled={isSubmitting} className="w-full md:w-auto px-10 py-6 bg-blue-600 text-white rounded-full font-black text-2xl flex items-center justify-center gap-4 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-blue-600/40 disabled:opacity-50 disabled:hover:scale-100">
-                  {isSubmitting ? 'Procesando...' : calculateTotal() > 0 ? <><CreditCard className="w-8 h-8" /> Abonar y Enviar a Producción</> : 'Enviar a Producción'}
-                </button>
+                {/* ÉNFASIS EN TÉRMINOS Y CONDICIONES (TOTALMENTE SOLVENTADOS Y PERFECTAMENTE ALINEADOS) */}
+                <div className="glass-panel rounded-3xl p-5 sm:p-7 shadow-xs flex flex-col gap-4 border border-slate-200/90">
+                  <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                    <ShieldCheck size={20} className="text-slate-900 shrink-0" />
+                    <div>
+                      <h4 className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
+                        Condiciones del Servicio y Puesta Online
+                      </h4>
+                      <p className="text-xs text-slate-500">
+                        Bases operativas, alcance técnico y garantía de desarrollo corporativo.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2.5 text-xs text-slate-600 leading-relaxed">
+                    {/* CLÁUSULA 1 */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
+                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Hosting Gratuito en Vercel</span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
+                        El hosting es completamente gratuito y este sitio web estará alojado de forma permanente en la infraestructura cloud de ultra velocidad de Vercel con certificado de seguridad SSL HTTPS incluido. Opera bajo arquitectura web estática de máxima performance, sin base de datos ni CMS dinámico, garantizando estabilidad absoluta y eliminando riesgos de hackeos o gastos mensuales de mantenimiento técnico.
+                      </p>
+                    </div>
+
+                    {/* CLÁUSULA 2 */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
+                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">2</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Estructura Fija y Validada</span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
+                        El sitio web no se modificará en su estructura: se adaptará y diagramará fielmente al contenido y rubro de la firma, pero no se agregarán ni quitarán secciones. Esta estructura corporativa está minuciosamente probada y validada en el mercado para ser altamente eficiente, retener la atención del usuario e incrementar significativamente consultas y ventas.
+                      </p>
+                    </div>
+
+                    {/* CLÁUSULA 3 */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
+                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Redacción y SEO Web + IA</span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
+                        El equipo de AG Digital Studio volverá a redactar textos, títulos y propuestas de valor para que el sitio cuente con un SEO optimizado para alto posicionamiento, tanto en motores de búsqueda tradicionales (Google) como en servicios de consulta e Inteligencia Artificial (ChatGPT, Gemini, Perplexity).
+                      </p>
+                    </div>
+
+                    {/* CLÁUSULA 4 */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
+                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">4</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Previsualización y Revisión</span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
+                        Una vez procesado este formulario, nuestro equipo confeccionará la propuesta digital y enviará un enlace de previsualización privado para que el cliente pueda validar los textos, imágenes y diagramación, contando con una instancia de ajustes antes de la publicación final a producción.
+                      </p>
+                    </div>
+
+                    {/* CLÁUSULA 5 */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
+                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">5</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Dominio y Autonomía</span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
+                        {DOMAIN_PLANS[data.domainPlan]?.isPaid
+                          ? `El arancel de ${DOMAIN_PLANS[data.domainPlan]?.priceFormatted} corresponde al registro anual oficial del dominio ${DOMAIN_PLANS[data.domainPlan]?.extension} ante la entidad oficial competente (NIC Argentina / ICANN). Al finalizar el desarrollo, se transferirán todos los accesos administrativos y credenciales oficiales para que el cliente pueda renovar y gestionar su dominio directamente por su cuenta tras un año, con total autonomía y sin costos extras de gestión.`
+                          : 'El subdominio gratuito de Vercel (.vercel.app) está incluido permanentemente sin costos de renovación ni cargos de registro ante entes oficiales.'}
+                      </p>
+                    </div>
+
+                    {/* CLÁUSULA 6 */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
+                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">6</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Cliente Prioritario AG</span>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
+                        Usted a partir de ahora es un cliente importante en AG Digital Studio. Podrá contactarnos siempre que lo desee para despejar dudas, solicitar asistencia y charlar sobre posibles modificaciones o ampliaciones futuras orientadas a seguir aumentando el alcance de su marca.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* CHECKBOX DE ACEPTACIÓN DESTACADO */}
+                  <div className="pt-2">
+                    <label className="flex items-start gap-3 p-4 rounded-2xl bg-slate-900/[0.03] border border-slate-300 hover:border-slate-900 transition-all cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={data.acceptedTerms}
+                        onChange={(e) => handleInputChange('acceptedTerms', e.target.checked)}
+                        className="w-4 h-4 mt-0.5 rounded text-slate-900 border-slate-300 focus:ring-0 shrink-0 cursor-pointer"
+                      />
+                      <div className="text-xs text-slate-700 leading-relaxed">
+                        <span className="font-bold text-slate-900 block mb-0.5">
+                          He leído y acepto los términos de desarrollo, alcance técnico y puesta online.
+                        </span>
+                        Confirmo que los contenidos cargados en este formulario son los definitivos para que el equipo de AG Digital Studio inicie la diagramación de mi plataforma web.
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* BOTÓN ENVIAR A PRODUCCIÓN / ABONAR Y ENVIAR */}
+                <div className="flex flex-col items-center justify-center gap-2.5 pt-1">
+                  <AnimatePresence mode="wait">
+                    {!data.acceptedTerms ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full sm:w-auto h-14 px-10 bg-slate-100 text-slate-400 font-semibold rounded-2xl text-sm sm:text-base flex items-center justify-center gap-3 border border-slate-200/80 cursor-not-allowed select-none transition-all"
+                      >
+                        <ShieldCheck size={18} className="opacity-40" />
+                        <span>Aceptá los términos para enviar</span>
+                      </button>
+                    ) : (
+                      <motion.button
+                        key="submit-enabled"
+                        type="button"
+                        initial={{ scale: 0.96, opacity: 0.8 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={handleSubmit}
+                        disabled={isSubmitting}
+                        className="relative overflow-hidden w-full sm:w-auto h-14 px-8 sm:px-10 bg-slate-950 hover:bg-slate-900 text-white font-bold rounded-2xl text-sm sm:text-base flex items-center justify-center gap-3 cursor-pointer select-none group shadow-lg hover:shadow-xl border border-slate-800 transition-all"
+                      >
+                        {/* HAZ DE LUZ ANIMADO (SHIMMER) */}
+                        <span className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 size={18} className="animate-spin text-white" />
+                            <span>
+                              {DOMAIN_PLANS[data.domainPlan]?.isPaid
+                                ? 'Guardando orden y conectando con Mercado Pago...'
+                                : 'Enviando información...'}
+                            </span>
+                          </>
+                        ) : DOMAIN_PLANS[data.domainPlan]?.isPaid ? (
+                          <>
+                            <MercadoPagoIcon size={22} className="shrink-0" />
+                            <span>Abonar {DOMAIN_PLANS[data.domainPlan]?.priceFormatted} y Enviar a Producción</span>
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck size={18} className="text-white" />
+                            <span>Enviar a Producción</span>
+                          </>
+                        )}
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+
+                  {data.acceptedTerms && DOMAIN_PLANS[data.domainPlan]?.isPaid && (
+                    <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-0.5 text-center">
+                      <MercadoPagoIcon size={14} className="shrink-0" />
+                      <span>Redirección oficial a Mercado Pago · Se abona y envía a producción en el mismo botón</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
           </motion.div>
         </AnimatePresence>
-      </div>
-
-      {/* CARRITO FLOTANTE Y CON RESET (Inteligente por rutas) */}
-      {calculateTotal() > 0 && currentStep.id !== 'END' && currentStep.id !== 'WELCOME' && (
-        <>
-          {/* BOTÓN FLOTANTE MOBILE (Pelotita) */}
-          <button 
-            onClick={() => setIsCartOpen(!isCartOpen)} 
-            className="md:hidden fixed bottom-24 right-4 z-[60] w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-105 transition-transform"
-          >
-            {isCartOpen ? <X size={24} /> : <ShoppingCart size={24} />}
-            {/* Pequeño punto rojo indicador */}
-            {!isCartOpen && <div className="absolute top-0 right-0 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full" />}
-          </button>
-
-          {/* PANEL DEL CARRITO (Visible en Desktop siempre, Toggle en Mobile) */}
-          <motion.div 
-            initial={false}
-            animate={{ 
-              opacity: isCartOpen ? 1 : 0, 
-              y: isCartOpen ? 0 : 20,
-              pointerEvents: isCartOpen ? 'auto' : 'none'
-            }}
-            className="fixed bottom-40 right-4 w-[calc(100%-2rem)] bg-white border-2 border-slate-200 shadow-2xl rounded-3xl z-[60] overflow-hidden md:!opacity-100 md:!y-0 md:!pointer-events-auto md:w-80 md:right-8 md:bottom-32"
-          >
-             <div className="bg-slate-900 text-white p-4 font-black flex items-center justify-between gap-2">
-               <div className="flex items-center gap-2"><ShoppingCart size={20}/> Tu Proyecto</div>
-             </div>
-             <div className="p-5 flex flex-col gap-3 text-sm">
-                <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Plantilla ({data.templateSelected})</span><span className="text-green-500 font-bold bg-green-50 px-2 py-0.5 rounded">¡Pagado!</span></div>
-                
-                {data.domainType === 'COM' && <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Dominio .COM</span><span className="font-bold text-slate-800">$30.000</span></div>}
-                {data.domainType === 'COMAR' && <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Dominio .COM.AR</span><span className="font-bold text-slate-800">$15.000</span></div>}
-                
-                {data.templateSelected === 'T1' && data.t1MenuMode === 'ecommerce' && <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Modo E-commerce</span><span className="font-bold text-green-500 bg-green-50 px-2 py-0.5 rounded">¡Bonificado!</span></div>}
-                {data.templateSelected === 'T2' && data.t2Dynamic === 'productos' && data.t2ProductMode === 'vitrina' && <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Catálogo Interactivo</span><span className="font-bold text-green-500 bg-green-50 px-2 py-0.5 rounded">¡Bonificado!</span></div>}
-                {data.templateSelected === 'T2' && data.t2Dynamic === 'servicios' && data.t2ServicePricing === 'con_precios' && <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">Lista de Precios</span><span className="font-bold text-green-500 bg-green-50 px-2 py-0.5 rounded">¡Bonificado!</span></div>}
-                
-                <div className="border-t border-slate-100 pt-3 mt-1 flex justify-between items-center">
-                  <span className="font-black text-slate-900 text-base">Total</span>
-                  <span className="font-black text-blue-600 text-xl">${calculateTotal().toLocaleString('es-AR')}</span>
-                </div>
-                
-                {/* BOTÓN PARA LIMPIAR EXTRAS */}
-                <button onClick={() => {clearCartSelections(); setIsCartOpen(false);}} className="w-full mt-2 py-2.5 text-sm text-red-500 font-bold hover:bg-red-50 rounded-xl transition-colors flex items-center justify-center gap-2 border border-transparent hover:border-red-100">
-                  <Trash2 size={16} /> Limpiar extras de pago
-                </button>
-             </div>
-          </motion.div>
-        </>
+      </main>
       )}
 
-      {currentStep.id !== 'WELCOME' && currentStep.id !== 'END' && (
-        <div className="fixed bottom-0 left-0 w-full px-4 py-3 md:py-4 bg-white/95 backdrop-blur-lg border-t border-slate-200 z-[50]">
-          <div className="max-w-4xl mx-auto flex justify-between">
-            <button onClick={prevStep} className="p-3 md:p-3.5 rounded-full bg-white shadow-md border border-slate-100 hover:bg-slate-50 transition-colors"><ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-slate-600"/></button>
-            <button onClick={nextStep} disabled={isNextDisabled()} className={`px-7 md:px-10 py-3 md:py-3.5 rounded-full font-bold text-base md:text-lg flex items-center gap-2.5 ${isNextDisabled() ? 'bg-slate-200 text-slate-400' : 'bg-blue-600 text-white hover:scale-105 shadow-xl shadow-blue-600/30 transition-all'}`}>
-              {isNextDisabled() ? 'Falta info' : 'Siguiente'} <ArrowRight className="w-4 h-4 md:w-5 md:h-5"/>
+      {/* INDICADOR FLOTANTE ANIMADO "CONTINÚA ABAJO" (SIN VERDE) */}
+      <AnimatePresence>
+        {!submittedProject && showScrollPrompt && currentStep.id !== 'WELCOME' && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            onClick={() => window.scrollBy({ top: 350, behavior: 'smooth' })}
+            className="fixed bottom-22 sm:bottom-24 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 hover:bg-slate-950 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-xl border border-slate-700/60 flex items-center gap-2 cursor-pointer backdrop-blur-md active:scale-95 transition-all"
+          >
+            <span>Continúa abajo</span>
+            <motion.span
+              animate={{ y: [0, 3, 0] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
+            >
+              <ArrowDown size={14} className="text-white" />
+            </motion.span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* BARRA INFERIOR DE ACCIÓN FLOTANTE (SIN VERDE) */}
+      {!submittedProject && currentStep.id !== 'WELCOME' && (
+        <div className="fixed bottom-0 sm:bottom-5 inset-x-0 z-40 px-3 py-3 sm:px-4 pointer-events-none flex justify-center">
+          <div className={`pointer-events-auto w-full ${currentStep.id === 'DOMAIN_PLAN' ? 'max-w-4xl' : 'max-w-2xl'} bg-white/95 sm:bg-white/90 backdrop-blur-2xl border-t sm:border border-slate-200/90 sm:rounded-2xl shadow-[0_-8px_30px_rgba(15,23,42,0.08)] sm:shadow-[0_20px_50px_-10px_rgba(15,23,42,0.16),0_0_0_1px_rgba(255,255,255,0.8)_inset] p-2 sm:p-2.5 flex items-center justify-between gap-2.5 sm:gap-3 transition-all duration-300`}>
+            
+            {/* BOTÓN ANTERIOR */}
+            <button
+              type="button"
+              onClick={prevStep}
+              className="h-12 sm:h-12.5 px-4 sm:px-5 rounded-xl bg-white sm:bg-transparent border border-slate-200/80 sm:border-transparent hover:border-slate-300 sm:hover:bg-slate-100 text-slate-700 hover:text-slate-950 active:scale-95 transition-all cursor-pointer font-semibold text-xs sm:text-sm flex items-center gap-2 shrink-0 shadow-2xs sm:shadow-none"
+              title="Paso anterior"
+            >
+              <ArrowLeft size={16} />
+              <span className="hidden xs:inline">Anterior</span>
             </button>
+
+            {/* INDICADOR CENTRAL DEL PASO (SOLO DESKTOP / TABLET) */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/60 select-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-900" />
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                Paso {currentStepIndex} de {STEPS.length - 1}
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="text-xs font-semibold text-slate-800 max-w-[130px] truncate">
+                {currentStep.title}
+              </span>
+            </div>
+
+            {/* BOTÓN CONTINUAR (SIN VERDE) */}
+            {currentStep.id !== 'FINAL_REVIEW' && (() => {
+              const disabled = isNextDisabled();
+              const nextLabel = 
+                currentStep.id === 'BRAND_STYLE' && brandSubStep === 0 ? 'Continuar a Tipografía' :
+                currentStep.id === 'BRAND_STYLE' && brandSubStep === 1 ? 'Continuar a Tono Visual' :
+                currentStep.id === 'DOMAIN_PLAN' ? 'Continuar a Preferencias' :
+                'Continuar';
+
+              return (
+                <div className="flex-1 sm:flex-initial">
+                  <AnimatePresence mode="wait">
+                    {disabled ? (
+                      <motion.button
+                        key="btn-disabled"
+                        type="button"
+                        initial={{ opacity: 0.7 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        disabled
+                        className="w-full sm:min-w-[210px] h-12 sm:h-12.5 px-5 sm:px-6 rounded-xl font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 bg-slate-100 text-slate-400 border border-slate-200/80 cursor-not-allowed select-none transition-all"
+                      >
+                        <span className="truncate">Completá este paso</span>
+                        <ArrowRight size={15} className="shrink-0 opacity-40" />
+                      </motion.button>
+                    ) : (
+                      <motion.button
+                        key="btn-enabled"
+                        type="button"
+                        initial={{ scale: 0.96, opacity: 0.8 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={nextStep}
+                        className="relative overflow-hidden w-full sm:min-w-[210px] h-12 sm:h-12.5 px-5 sm:px-7 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 bg-slate-950 hover:bg-slate-900 text-white cursor-pointer select-none group shadow-lg hover:shadow-xl border border-slate-800 transition-all"
+                      >
+                        {/* HAZ DE LUZ ANIMADO (SHIMMER) */}
+                        <span className="absolute inset-0 -translate-x-full animate-[shimmer_2.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+
+                        <span className="truncate">{nextLabel}</span>
+
+                        <ArrowRight 
+                          size={16} 
+                          className="shrink-0 transition-transform duration-200 group-hover:translate-x-1" 
+                        />
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })()}
+
           </div>
         </div>
       )}

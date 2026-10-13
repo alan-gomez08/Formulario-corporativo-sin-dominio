@@ -60,8 +60,8 @@ export default function AddressAutocomplete({ value, onChange }: Props) {
 
   return (
     <div className="relative w-full" ref={wrapperRef}>
-      <div className="flex items-center gap-3 bg-slate-50 border-2 border-slate-100 focus-within:border-blue-500 rounded-2xl px-4 py-1 transition-all">
-        <MapPin className="text-slate-400 shrink-0" size={24}/>
+      <div className="h-12 flex items-center gap-2.5 bg-white border border-slate-200 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 rounded-xl px-3.5 shadow-2xs transition-all">
+        <MapPin className="text-slate-400 shrink-0" size={18}/>
         <input
           type="text"
           value={query || value.replace('https://www.google.com/maps/search/?api=1&query=', decodeURIComponent)}
@@ -70,23 +70,23 @@ export default function AddressAutocomplete({ value, onChange }: Props) {
             onChange(''); // Limpiamos el link viejo si vuelven a escribir
           }}
           onFocus={() => { if (results.length > 0) setIsOpen(true); }}
-          placeholder="Empezá a escribir tu dirección..."
-          className="w-full text-xl bg-transparent outline-none p-3 font-bold text-slate-800"
+          placeholder="Escribe la dirección oficial o sede..."
+          className="w-full text-sm bg-transparent outline-none font-medium text-slate-900 placeholder:text-slate-400"
         />
-        {isSearching && <Loader2 className="animate-spin text-blue-500 shrink-0" size={20} />}
+        {isSearching && <Loader2 className="animate-spin text-slate-500 shrink-0" size={16} />}
       </div>
 
-      {/* Menú desplegable flotante estilo "Google" */}
+      {/* Menú desplegable flotante estilo minimalista */}
       {isOpen && results.length > 0 && (
-        <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-50">
+        <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50">
           {results.map((result) => (
             <button
               key={result.place_id}
               onClick={() => handleSelect(result.display_name)}
-              className="w-full text-left px-5 py-4 hover:bg-blue-50 border-b border-slate-50 last:border-b-0 transition-colors flex flex-col gap-1"
+              className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100 last:border-b-0 transition-colors flex flex-col gap-0.5 cursor-pointer"
             >
-              <span className="font-bold text-slate-800 text-lg line-clamp-1">{result.display_name.split(',')[0]}</span>
-              <span className="text-sm text-slate-500 line-clamp-1">{result.display_name}</span>
+              <span className="font-semibold text-slate-900 text-sm line-clamp-1">{result.display_name.split(',')[0]}</span>
+              <span className="text-xs text-slate-500 line-clamp-1">{result.display_name}</span>
             </button>
           ))}
         </div>

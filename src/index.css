@@ -1,21 +1,69 @@
 @import "tailwindcss";
 
-html {
-  font-size: 14px;
-  -webkit-text-size-adjust: 100%;
-}
+@layer base {
+  * {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
 
-@media (min-width: 1536px) {
-  html {
-    font-size: 14.5px;
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    background-color: #f8fafc;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-display, .font-mono, .font-sans {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+    letter-spacing: -0.02em;
   }
 }
 
-/* Clases extra para ocultar las barras de scroll feas y dejarlo prolijo */
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+/* Glassmorphism de alta definición */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.05), 0 0 1px 1px rgba(255, 255, 255, 0.9) inset;
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(203, 213, 225, 0.9);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.08), 0 0 1px 1px rgba(255, 255, 255, 1) inset;
+  transform: translateY(-2px);
+}
+
+/* Scrollbars limpias */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .hide-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Animación de Shimmer para barras y acentos */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 2.5s infinite;
+}
+
+/* Inputs táctiles fluidos */
+input, textarea, button, select {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -5,16 +5,18 @@ interface Props {
   label?: string;
   onChange: (fileUrl: string) => void;
   value?: string;
-  userId?: string; // NUEVO: Recibe el usuario para crear la carpeta
+  userId?: string;
+  clientFolder?: string; // Nombre del cliente / empresa para organizar en Cloudinary
+  imageType?: string;    // 'logotipo' | 'portada_desktop' | 'portada_mobile' | 'equipo_instalaciones'
 }
 
-export default function ImageUpload({ label, onChange, value, userId }: Props) {
+export default function ImageUpload({ label, onChange, value, userId, clientFolder, imageType }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 👇 PONÉ TUS DATOS DE CLOUDINARY ACÁ 👇
-  const CLOUD_NAME = "t8nl8hwm";
-  const UPLOAD_PRESET = "portal_imagenes";
+  // Configuración de Cloudinary (con soporte para .env o defaults verificados)
+  const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "t8nl8hwm";
+  const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "portal_imagenes";
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -41,7 +43,7 @@ export default function ImageUpload({ label, onChange, value, userId }: Props) {
 
   const uploadToCloudinary = async (file: File) => {
     if (!CLOUD_NAME || CLOUD_NAME === "TU_CLOUD_NAME") {
-      alert("Falta configurar el Cloud Name de Cloudinary en el código.");
+      alert("Falta configurar el Cloud Name de Cloudinary en el código o en las variables de entorno.");
       return;
     }
 
@@ -50,11 +52,20 @@ export default function ImageUpload({ label, onChange, value, userId }: Props) {
     formData.append('file', file);
     formData.append('upload_preset', UPLOAD_PRESET);
 
-    // MAGIA: Si pasaron un usuario, Cloudinary crea una carpeta con ese nombre
-    if (userId && userId.trim() !== '') {
-      // Limpia el nombre para evitar caracteres que rompan la URL
-      const safeFolder = userId.replace(/[^a-zA-Z0-9]/g, '_');
-      formData.append('folder', safeFolder);
+    // ESTRUCTURA DE CARPETAS EN CLOUDINARY:
+    const BASE_FOLDER = import.meta.env.VITE_CLOUDINARY_BASE_FOLDER || 'Template Corporativo - Sin dominio';
+    const rawFolder = (clientFolder || userId || 'cliente_general').trim();
+    const safeFolder = rawFolder
+      .replace(/[<>:"/\\|?*#]+/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_');
+
+    formData.append('folder', `${BASE_FOLDER}/${safeFolder}`);
+
+    // Si se especifica el tipo de imagen, se le asigna un nombre claro dentro de la carpeta
+    if (imageType) {
+      const safeType = imageType.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+      formData.append('public_id', `${safeType}_${Date.now()}`);
     }
 
     try {
@@ -68,7 +79,8 @@ export default function ImageUpload({ label, onChange, value, userId }: Props) {
       if (data.secure_url) {
         onChange(data.secure_url);
       } else {
-        alert("Error al subir la imagen. Revisá la configuración.");
+        console.error("Error respuesta Cloudinary:", data);
+        alert(data.error?.message || "Error al subir la imagen a Cloudinary. Por favor, intentá nuevamente.");
       }
     } catch (error) {
       console.error("Error subiendo a Cloudinary:", error);
@@ -82,37 +94,37 @@ export default function ImageUpload({ label, onChange, value, userId }: Props) {
 
   return (
     <div className="w-full flex flex-col gap-2">
-      {label && <span className="text-sm font-bold text-slate-500 ml-1">{label}</span>}
+      {label && <span className="text-xs font-semibold text-slate-500 ml-1">{label}</span>}
       
       {value ? (
-        <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-slate-200 bg-white group flex items-center justify-center p-2 shadow-sm">
+        <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-slate-200 bg-white group flex items-center justify-center p-2 shadow-xs">
           <img src={value} alt="Preview" className="w-full h-full object-contain" />
-          <div className="absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
-            <button onClick={clearImage} className="bg-white text-red-500 p-3 rounded-full hover:scale-110 shadow-xl transition-transform">
-              <X size={24} />
+          <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-xs">
+            <button onClick={clearImage} className="bg-white hover:bg-red-50 text-red-600 p-2.5 rounded-xl border border-slate-200 shadow-md hover:scale-105 transition-all cursor-pointer">
+              <X size={18} />
             </button>
           </div>
         </div>
       ) : (
         <label
           onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
-          className={`relative flex flex-col items-center justify-center w-full h-44 border-2 border-dashed rounded-2xl transition-all duration-300
-            ${isDragging ? 'border-blue-500 bg-blue-50 scale-[1.02]' : 'border-slate-300 bg-slate-50/50 hover:border-blue-400 hover:bg-blue-50/30'}
+          className={`relative flex flex-col items-center justify-center w-full h-44 border border-dashed rounded-2xl transition-all duration-200
+            ${isDragging ? 'border-slate-900 bg-slate-50 scale-[1.01]' : 'border-slate-300 bg-white hover:bg-slate-50/80 hover:border-slate-400'}
             ${isUploading ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
         >
           {isUploading ? (
-            <div className="flex flex-col items-center justify-center gap-3 text-blue-600">
-              <Loader2 size={32} className="animate-spin" />
-              <span className="font-bold text-sm">Subiendo foto...</span>
+            <div className="flex flex-col items-center justify-center gap-2.5 text-slate-600">
+              <Loader2 size={26} className="animate-spin text-slate-700" />
+              <span className="font-medium text-xs text-slate-600">Cargando archivo...</span>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 p-4 text-center">
-              <div className={`p-4 rounded-full transition-colors duration-300 shadow-sm ${isDragging ? 'bg-blue-100 text-blue-600' : 'bg-white text-slate-400 border border-slate-100'}`}>
-                <ImagePlus size={28} strokeWidth={1.5} />
+            <div className="flex flex-col items-center justify-center gap-2.5 p-4 text-center">
+              <div className={`p-3 rounded-xl transition-colors duration-200 ${isDragging ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 border border-slate-200/80'}`}>
+                <ImagePlus size={20} strokeWidth={1.8} />
               </div>
               <div>
-                <p className="text-sm font-bold text-slate-700 mb-0.5"><span className="text-blue-600">Subir imagen</span></p>
-                <p className="text-xs text-slate-400 font-medium">Hacé clic o arrastrá acá</p>
+                <p className="text-xs sm:text-sm font-semibold text-slate-800 mb-0.5"><span>Cargar fotografía</span></p>
+                <p className="text-[11px] text-slate-400">Haz clic o arrastra un archivo aquí</p>
               </div>
             </div>
           )}
