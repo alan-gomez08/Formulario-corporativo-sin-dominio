@@ -8,7 +8,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
-export const DEFAULT_CORPORATE_DEMO_URL = 'https://tu-demo-corporativa.vercel.app';
+export const DEFAULT_CORPORATE_DEMO_URL = 'https://landing-corporativa-kohl.vercel.app/';
 
 interface StepWelcomeProps {
   onStart: () => void;
