@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowRight, 
@@ -37,13 +37,9 @@ import { parseColorToCss } from '../utils/colorParser';
 import { db, FIRESTORE_COLLECTION } from '../firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-const CLOUDINARY_BASE_FOLDER = import.meta.env.VITE_CLOUDINARY_BASE_FOLDER || 'Template Corporativo - Sin dominio';
+import FloatingWhatsAppSupport, { WhatsAppIcon } from './FloatingWhatsAppSupport';
 
-const WhatsAppIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.456 5.711 1.456h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
-  </svg>
-);
+const CLOUDINARY_BASE_FOLDER = import.meta.env.VITE_CLOUDINARY_BASE_FOLDER || 'Template Corporativo - Sin dominio';
 
 const InstagramIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -506,15 +502,14 @@ export default function Wizard() {
           aceptado: data.acceptedTerms,
           fechaAceptacion: new Date().toISOString(),
           clausulasValidadas: [
-            'Hosting Gratuito en Vercel',
-            'Estructura web fija y probada en el mercado (sin alterar secciones)',
-            'Reescritura de textos y optimización SEO para buscadores e IA',
-            'Previsualización previa y ronda de correcciones antes de producción',
-            selectedPlanConfig.isPaid
-              ? `Dominio oficial ${selectedPlanConfig.extension} por 1 año con arancel oficial abonado y transferencia de credenciales`
-              : 'Subdominio permanente en Vercel sin costos de renovación',
-            'Cliente Prioritario AG Digital Studio con atención continua'
-          ]
+            '1. Cómputo del Plazo de Entrega (48 hs hábiles): Inicio contra recepción total de datos obligatorios, enlaces y archivos validados.',
+            '2. Propiedad Intelectual y Derechos del Contenido: Declaración jurada de titularidad y deslinde total a AG Digital Studio.',
+            '3. Estructura Fija, Hosting Cloud y Seguridad SSL: Adaptación fiel sin alteración de secciones; hosting Vercel y SSL bonificado.',
+            '4. Deslinde Técnico y Plataformas de Terceros: Deslinde por caídas, políticas o interrupciones de plataformas de terceros.',
+            '5. Previsualización, Revisión y Alcance de Cambios: Enlace privado de validación y una (1) instancia única e integral de ajustes menores.',
+            '6. Dominio, Gestión y Autonomía: Registro oficial por 1 año, delegación de credenciales y total autonomía sin permanencia.'
+          ],
+          declaracionLegalCheckbox: 'He leído y acepto los Términos de Contratación, Propiedad de Contenidos y Alcance Técnico. Declaro que los datos y archivos cargados son definitivos y cuento con los derechos de uso del material suministrado. Autorizo a AG Digital Studio a iniciar la producción técnica bajo las condiciones y plazos estipulados.'
         }
       };
 
@@ -759,7 +754,7 @@ export default function Wizard() {
                 </a>
               )}
               <a
-                href={`https://wa.me/5491100000000?text=${encodeURIComponent(
+                href={`https://wa.me/5491178188323?text=${encodeURIComponent(
                   `¡Hola AG Digital Studio! Acabo de enviar el formulario de onboarding para mi empresa "${submittedProject.companyName}" (Orden #${submittedProject.id.toUpperCase()}).`
                 )}`}
                 target="_blank"
@@ -2063,69 +2058,67 @@ export default function Wizard() {
                   <div className="flex flex-col gap-2.5 text-xs text-slate-600 leading-relaxed">
                     {/* CLÁUSULA 1 */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
-                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                      <div className="flex items-center gap-2.5 md:w-[250px] md:shrink-0 pt-0.5">
                         <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Hosting Gratuito en Vercel</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Cómputo del Plazo de Entrega (48 hs hábiles)</span>
                       </div>
                       <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
-                        El hosting es completamente gratuito y este sitio web estará alojado de forma permanente en la infraestructura cloud de ultra velocidad de Vercel con certificado de seguridad SSL HTTPS incluido. Opera bajo arquitectura web estática de máxima performance, sin base de datos ni CMS dinámico, garantizando estabilidad absoluta y eliminando riesgos de hackeos o gastos mensuales de mantenimiento técnico.
+                        El plazo garantizado de entrega de 48 horas hábiles comenzará a computarse única y exclusivamente una vez enviado este formulario con la totalidad de los datos obligatorios, enlaces y archivos requeridos en estado completo y validado. El envío de información incompleta o demoras en la provisión de accesos pausará automáticamente el cómputo de los tiempos de entrega.
                       </p>
                     </div>
 
                     {/* CLÁUSULA 2 */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
-                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                      <div className="flex items-center gap-2.5 md:w-[250px] md:shrink-0 pt-0.5">
                         <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">2</span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Estructura Fija y Validada</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Propiedad Intelectual y Derechos del Contenido</span>
                       </div>
                       <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
-                        El sitio web no se modificará en su estructura: se adaptará y diagramará fielmente al contenido y rubro de la firma, pero no se agregarán ni quitarán secciones. Esta estructura corporativa está minuciosamente probada y validada en el mercado para ser altamente eficiente, retener la atención del usuario e incrementar significativamente consultas y ventas.
+                        El cliente declara bajo juramento ser titular legítimo o contar con las autorizaciones comerciales correspondientes para el uso de todas las marcas, fotografías, logotipos, textos e información provista en este formulario. AG Digital Studio queda expresamente liberado de cualquier reclamo judicial o extrajudicial vinculado a derechos de autor, propiedad intelectual o marcas de terceros.
                       </p>
                     </div>
 
                     {/* CLÁUSULA 3 */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
-                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                      <div className="flex items-center gap-2.5 md:w-[250px] md:shrink-0 pt-0.5">
                         <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Redacción y SEO Web + IA</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Estructura Fija, Hosting Cloud y Seguridad SSL</span>
                       </div>
                       <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
-                        El equipo de AG Digital Studio volverá a redactar textos, títulos y propuestas de valor para que el sitio cuente con un SEO optimizado para alto posicionamiento, tanto en motores de búsqueda tradicionales (Google) como en servicios de consulta e Inteligencia Artificial (ChatGPT, Gemini, Perplexity).
+                        El desarrollo se adaptará fielmente a la identidad de su marca dentro de la estructura corporativa contratada. No se añadirán ni eliminarán secciones estructurales fuera del alcance del plan. Incluye alojamiento permanente en la infraestructura cloud de ultra velocidad de Vercel con certificado de seguridad SSL HTTPS bonificado, sin costos fijos de servidor.
                       </p>
                     </div>
 
                     {/* CLÁUSULA 4 */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
-                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                      <div className="flex items-center gap-2.5 md:w-[250px] md:shrink-0 pt-0.5">
                         <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">4</span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Previsualización y Revisión</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Deslinde Técnico y Plataformas de Terceros</span>
                       </div>
                       <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
-                        Una vez procesado este formulario, nuestro equipo confeccionará la propuesta digital y enviará un enlace de previsualización privado para que el cliente pueda validar los textos, imágenes y diagramación, contando con una instancia de ajustes antes de la publicación final a producción.
+                        El sitio web integra herramientas y servicios de terceros (infraestructura cloud, servidores de Google Sheets / Drive, API y aplicación de WhatsApp, y entidades registradoras de dominios). AG Digital Studio garantiza la correcta vinculación técnica inicial, pero no asume responsabilidad por interrupciones globales, cambios de políticas, bloqueos o caídas ajenas a nuestro control directo.
                       </p>
                     </div>
 
                     {/* CLÁUSULA 5 */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
-                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                      <div className="flex items-center gap-2.5 md:w-[250px] md:shrink-0 pt-0.5">
                         <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">5</span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Dominio y Autonomía</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Previsualización, Revisión y Alcance de Cambios</span>
                       </div>
                       <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
-                        {DOMAIN_PLANS[data.domainPlan]?.isPaid
-                          ? `El arancel de ${DOMAIN_PLANS[data.domainPlan]?.priceFormatted} corresponde al registro anual oficial del dominio ${DOMAIN_PLANS[data.domainPlan]?.extension} ante la entidad oficial competente (NIC Argentina / ICANN). Al finalizar el desarrollo, se transferirán todos los accesos administrativos y credenciales oficiales para que el cliente pueda renovar y gestionar su dominio directamente por su cuenta tras un año, con total autonomía y sin costos extras de gestión.`
-                          : 'El subdominio gratuito de Vercel (.vercel.app) está incluido permanentemente sin costos de renovación ni cargos de registro ante entes oficiales.'}
+                        Finalizado el desarrollo, se entregará un enlace de previsualización privado para su validación. El servicio incluye una (1) instancia única e integral de ajustes menores sobre textos, imágenes o enlaces antes de la publicación definitiva. Cualquier modificación estructural posterior, rediseño o carga adicional de contenido operará bajo cotización de mantenimiento a demanda.
                       </p>
                     </div>
 
                     {/* CLÁUSULA 6 */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col md:flex-row md:items-start gap-2.5 md:gap-5">
-                      <div className="flex items-center gap-2.5 md:w-[220px] md:shrink-0 pt-0.5">
+                      <div className="flex items-center gap-2.5 md:w-[250px] md:shrink-0 pt-0.5">
                         <span className="w-5 h-5 rounded-md bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">6</span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Cliente Prioritario AG</span>
+                        <span className="font-bold text-slate-900 text-xs sm:text-[13px] leading-tight">Dominio, Gestión y Autonomía</span>
                       </div>
                       <p className="text-xs sm:text-[13px] text-slate-600 leading-relaxed md:flex-1">
-                        Usted a partir de ahora es un cliente importante en AG Digital Studio. Podrá contactarnos siempre que lo desee para despejar dudas, solicitar asistencia y charlar sobre posibles modificaciones o ampliaciones futuras orientadas a seguir aumentando el alcance de su marca.
+                        En planes que incluyan gestión de dominio, el registro oficial se realiza por un (1) año calendario. Al finalizar la puesta online, se facilitan o delegan todas las credenciales y accesos administrativos para que el cliente mantenga el control absoluto de su activo digital y su renovación futura, con total autonomía y sin contratos de permanencia.
                       </p>
                     </div>
                   </div>
@@ -2139,11 +2132,13 @@ export default function Wizard() {
                         onChange={(e) => handleInputChange('acceptedTerms', e.target.checked)}
                         className="w-4 h-4 mt-0.5 rounded text-slate-900 border-slate-300 focus:ring-0 shrink-0 cursor-pointer"
                       />
-                      <div className="text-xs text-slate-700 leading-relaxed">
-                        <span className="font-bold text-slate-900 block mb-0.5">
-                          He leído y acepto los términos de desarrollo, alcance técnico y puesta online.
+                      <div className="text-xs leading-relaxed">
+                        <span className="font-bold text-slate-900 block mb-1">
+                          He leído y acepto los Términos de Contratación, Propiedad de Contenidos y Alcance Técnico.
                         </span>
-                        Confirmo que los contenidos cargados en este formulario son los definitivos para que el equipo de AG Digital Studio inicie la diagramación de mi plataforma web.
+                        <p className="text-slate-500">
+                          “Declaro que los datos y archivos cargados son definitivos y cuento con los derechos de uso del material suministrado. Autorizo a AG Digital Studio a iniciar la producción técnica bajo las condiciones y plazos estipulados.”
+                        </p>
                       </div>
                     </label>
                   </div>
@@ -2193,7 +2188,7 @@ export default function Wizard() {
                         ) : (
                           <>
                             <ShieldCheck size={18} className="text-white" />
-                            <span>Enviar a Producción</span>
+                            <span>Confirmar y Enviar Proyecto a Producción 🚀</span>
                           </>
                         )}
                       </motion.button>
@@ -2320,6 +2315,13 @@ export default function Wizard() {
           </div>
         </div>
       )}
+
+      {/* BOTÓN FLOTANTE DE ASISTENCIA POR WHATSAPP (ACTIVO EN TODO EL PROCESO) */}
+      <FloatingWhatsAppSupport
+        currentStepTitle={currentStep?.title}
+        companyName={data.companyName}
+        stepNumber={currentStepIndex}
+      />
     </div>
   );
 }
